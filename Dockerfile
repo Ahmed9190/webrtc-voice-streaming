@@ -6,7 +6,7 @@ RUN apk add --no-cache python3 py3-pip ffmpeg gcc musl-dev libffi-dev openssl-de
 WORKDIR /data
 
 # Cache buster - change this to invalidate cache
-ARG CACHE_BUSTER=1.0.16
+ARG CACHE_BUSTER=1.0.17
 
 # Download Python files directly from GitHub with error checking
 RUN echo "Cache buster: ${CACHE_BUSTER}" && \
@@ -21,13 +21,18 @@ RUN echo "Cache buster: ${CACHE_BUSTER}" && \
 # Install dependencies
 RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
 
-# Create a cache-busting file to force COPY to run
-RUN echo "${CACHE_BUSTER}" > /tmp/cachebuster
-
-# Copy rootfs - this should now run because cachebuster changes
-COPY rootfs/ /
-
-RUN chmod a+x /usr/bin/run.sh
+# Create run.sh directly to avoid COPY caching issues
+RUN mkdir -p /usr/bin && \
+    echo '#!/bin/bash' > /usr/bin/run.sh && \
+    echo 'set -e' >> /usr/bin/run.sh && \
+    echo '' >> /usr/bin/run.sh && \
+    echo 'echo "=== Voice Streaming Backend v1.0.17 ==="' >> /usr/bin/run.sh && \
+    echo 'echo "Starting server..."' >> /usr/bin/run.sh && \
+    echo 'cd /data' >> /usr/bin/run.sh && \
+    echo 'ls -la /data/' >> /usr/bin/run.sh && \
+    echo 'exec python3 /data/webrtc_server_relay.py' >> /usr/bin/run.sh && \
+    chmod a+x /usr/bin/run.sh && \
+    cat /usr/bin/run.sh
 
 EXPOSE 8080 8081
 
