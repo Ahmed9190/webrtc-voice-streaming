@@ -1,0 +1,32 @@
+{
+  "webrtc": {
+    "ice_servers": [],
+    "rtc_config": {
+      "bundlePolicy": "max-bundle",
+      "rtcpMuxPolicy": "require",
+      "sdpSemantics": "unified-plan",
+      "iceCandidatePoolSize": 0,
+      "iceTransportPolicy": "all"
+    },
+    "audio_constraints": {
+      "sample_rate": 16000,
+      "channels": 1,
+      "echo_cancellation": true,
+      "noise_suppression": true,
+      "auto_gain_control": true,
+      "latency": 0
+    },
+    "connection_timeout": 30,
+    "reconnect_attempts": 5
+  },
+  "server": {
+    "port": 8080,
+    "host": "0.0.0.0",
+    "max_connections": 50,
+    "queue_size": 100
+  },
+  "lan_mode": {
+    "enabled": true,
+    "description": "Internal network only, no external STUN/TURN"
+  }
+}
