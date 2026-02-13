@@ -6,7 +6,7 @@ RUN apk add --no-cache python3 py3-pip ffmpeg gcc musl-dev libffi-dev openssl-de
 WORKDIR /data
 
 # Cache buster - change this to invalidate cache
-ARG CACHE_BUSTER=1.0.14
+ARG CACHE_BUSTER=1.0.16
 
 # Download Python files directly from GitHub with error checking
 RUN echo "Cache buster: ${CACHE_BUSTER}" && \
@@ -21,7 +21,10 @@ RUN echo "Cache buster: ${CACHE_BUSTER}" && \
 # Install dependencies
 RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
 
-# Copy rootfs
+# Create a cache-busting file to force COPY to run
+RUN echo "${CACHE_BUSTER}" > /tmp/cachebuster
+
+# Copy rootfs - this should now run because cachebuster changes
 COPY rootfs/ /
 
 RUN chmod a+x /usr/bin/run.sh
