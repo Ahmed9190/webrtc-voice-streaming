@@ -30,3 +30,14 @@ Read `docs/README.md` for the complete topic index. Key topics:
 1. Read `docs/README.md` first to understand available topics
 2. Consult specific docs files as needed for detailed information
 3. Follow the conventions and patterns established in the docs
+
+## Handover Documents
+
+Before starting work on this project, check the following handover documents in `handover/` folder:
+
+| File | Purpose |
+|------|---------|
+| `HA-ADDON-HANDOVER.md` | Current project status, issues, and next steps for the Home Assistant add-on conversion |
+| `CREDENTIALS-TOOLS.md` | Access credentials, Home Assistant instance details, and tools |
+
+**Next Agent:** Start by reading `handover/HA-ADDON-HANDOVER.md` to understand the current state and what needs to be done next.
