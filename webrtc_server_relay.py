@@ -1,14 +1,15 @@
 import asyncio
 import json
 import logging
-import time
+import os
+import ssl
 import uuid
 from typing import Dict
 
-import numpy as np
 from aiohttp import WSMsgType, web
 from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription
 from aiortc.contrib.media import MediaRelay
+
 from audio_stream_server import AudioStreamServer
 
 logger = logging.getLogger(__name__)
@@ -116,7 +117,10 @@ class VoiceStreamingServer:
                     except json.JSONDecodeError:
                         logger.error(f"Invalid JSON received from {connection_id}")
                     except Exception as e:
-                        logger.error(f"Error handling message from {connection_id}: {e}", exc_info=True)
+                        logger.error(
+                            f"Error handling message from {connection_id}: {e}",
+                            exc_info=True,
+                        )
                 elif msg.type == WSMsgType.ERROR:
                     logger.error(f"WebSocket error: {ws.exception()}")
 
@@ -189,7 +193,7 @@ class VoiceStreamingServer:
                 connection["stream_id"] = stream_id
 
                 logger.info(f"Stored stream {stream_id} for sender {connection_id}")
-                
+
                 # Broadast availability to all clients
                 await self.broadcast_stream_available(stream_id)
 
@@ -234,9 +238,13 @@ class VoiceStreamingServer:
                 stream_id = stream_keys[-1]
 
             if not stream_id or stream_id not in self.active_streams:
-                logger.warning(f"No audio stream available for receiver {connection_id}")
+                logger.warning(
+                    f"No audio stream available for receiver {connection_id}"
+                )
                 await connection["ws"].send_str(
-                    json.dumps({"type": "error", "message": "No audio stream available"})
+                    json.dumps(
+                        {"type": "error", "message": "No audio stream available"}
+                    )
                 )
                 return
 
@@ -254,7 +262,7 @@ class VoiceStreamingServer:
             # Add this receiver to the stream list
             if connection_id not in stream_info["receivers"]:
                 stream_info["receivers"].append(connection_id)
-            
+
             connection["stream_id"] = stream_id
 
             # Create RTCPeerConnection
@@ -279,7 +287,7 @@ class VoiceStreamingServer:
             await pc.setLocalDescription(offer)
 
             # Wait slightly longer for ICE gathering to be safe
-            await asyncio.sleep(1.0) 
+            await asyncio.sleep(1.0)
 
             # Check if connection still exists and matches
             if self.connections.get(connection_id, {}).get("pc") != pc:
@@ -297,15 +305,17 @@ class VoiceStreamingServer:
                     }
                 )
             )
-            logger.info(f"Sent offer to receiver {connection_id} for stream {stream_id}")
+            logger.info(
+                f"Sent offer to receiver {connection_id} for stream {stream_id}"
+            )
 
         except Exception as e:
-            logger.error(f"Error setting up receiver {connection_id}: {e}", exc_info=True)
+            logger.error(
+                f"Error setting up receiver {connection_id}: {e}", exc_info=True
+            )
             if connection_id in self.connections:
                 await self.connections[connection_id]["ws"].send_str(
-                    json.dumps(
-                        {"type": "error", "message": f"Server error: {str(e)}"}
-                    )
+                    json.dumps({"type": "error", "message": f"Server error: {str(e)}"})
                 )
 
     async def send_available_streams(self, connection_id: str):
@@ -353,7 +363,7 @@ class VoiceStreamingServer:
 
             answer = await pc.createAnswer()
             await pc.setLocalDescription(answer)
-            
+
             # Wait for ICE
             await asyncio.sleep(1.0)
 
@@ -428,7 +438,7 @@ class VoiceStreamingServer:
                 try:
                     # Pull frame to keep relay active
                     frame = await asyncio.wait_for(track.recv(), timeout=2.0)
-                    
+
                     frame_count += 1
                     # Downsample viz data
                     if frame_count % 5 == 0:
@@ -450,19 +460,38 @@ class VoiceStreamingServer:
         port = 8080
         host = "0.0.0.0"
 
+        # Check for SSL certificates
+        ssl_context = None
+        cert_locations = [
+            ("/ssl/fullchain.pem", "/ssl/privkey.pem"),
+            ("/config/ssl/fullchain.pem", "/config/ssl/privkey.pem"),
+        ]
+
+        for cert, key in cert_locations:
+            if os.path.exists(cert) and os.path.exists(key):
+                try:
+                    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+                    ssl_context.load_cert_chain(cert, key)
+                    logger.info(f"SSL enabled using certificates from {cert}")
+                    break
+                except Exception as e:
+                    logger.error(f"Failed to load SSL certificates from {cert}: {e}")
+
         runner = web.AppRunner(self.app)
         await runner.setup()
-        site = web.TCPSite(runner, host, port)
+        site = web.TCPSite(runner, host, port, ssl_context=ssl_context)
         await site.start()
 
-        # Start Audio Stream Server
-        await self.audio_server.start(host, 8081)
+        # Start Audio Stream Server (also optional SSL)
+        await self.audio_server.start(host, 8081, ssl_context)
 
         self.cleanup_task = asyncio.create_task(self.cleanup_stale_streams())
-        logger.info(f"Server started on {host}:{port}")
+        protocol = "https/wss" if ssl_context else "http/ws"
+        logger.info(f"Server started on {protocol}://{host}:{port}")
 
         while True:
             await asyncio.sleep(3600)
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

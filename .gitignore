@@ -5,3 +5,19 @@ __pycache__/
 *.egg-info/
 venv/
 .venv/
+
+# SSL Certificates
+ssl/fullchain.pem
+ssl/privkey.pem
+ssl/homeassistant.crt
+ssl/homeassistant.key
+ssl/homeassistant.csr
+ssl/*.backup_*
+
+# IDEs
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

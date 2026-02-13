@@ -1,0 +1,35 @@
+[req]
+default_bits = 2048
+prompt = no
+default_md = sha256
+distinguished_name = dn
+req_extensions = v3_req
+x509_extensions = v3_ca
+
+[dn]
+C = US
+ST = Local
+L = Local
+O = Home Assistant
+OU = Voice Streaming
+CN = 192.168.2.228
+
+[v3_req]
+basicConstraints = CA:FALSE
+keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+
+[v3_ca]
+basicConstraints = critical, CA:TRUE
+keyUsage = critical, keyCertSign, cRLSign, digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = localhost
+DNS.2 = homeassistant.local
+DNS.3 = aw
+DNS.4 = aw.local
+IP.1 = 127.0.0.1
+IP.2 = 192.168.2.228

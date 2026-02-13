@@ -121,10 +121,10 @@ class AudioStreamServer:
         request.match_info["stream_id"] = stream_id
         return await self.stream_handler(request)
 
-    async def start(self, host="0.0.0.0", port=8081):
+    async def start(self, host="0.0.0.0", port=8081, ssl_context=None):
         self.runner = web.AppRunner(self.app)
         await self.runner.setup()
-        self.site = web.TCPSite(self.runner, host, port)
+        self.site = web.TCPSite(self.runner, host, port, ssl_context=ssl_context)
         await self.site.start()
         logger.info(f"Audio Stream Server started on {host}:{port}")
 
