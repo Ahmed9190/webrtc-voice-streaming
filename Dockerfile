@@ -21,6 +21,13 @@ RUN chmod a+x *.py
 RUN echo '#!/usr/bin/with-contenv bashio' > /usr/bin/run.sh && \
     echo 'set -e' >> /usr/bin/run.sh && \
     echo 'bashio::log.info "Starting Voice Streaming Backend..."' >> /usr/bin/run.sh && \
+    echo 'if [ -d "/config/www" ]; then' >> /usr/bin/run.sh && \
+    echo '  bashio::log.info "Installing frontend cards to /config/www/voice_streaming_backend..."' >> /usr/bin/run.sh && \
+    echo '  mkdir -p /config/www/voice_streaming_backend/dist' >> /usr/bin/run.sh && \
+    echo '  cp -rf /app/frontend/dist/* /config/www/voice_streaming_backend/dist/' >> /usr/bin/run.sh && \
+    echo 'else' >> /usr/bin/run.sh && \
+    echo '  bashio::log.warning "/config/www not found. Cards will not be installed automatically."' >> /usr/bin/run.sh && \
+    echo 'fi' >> /usr/bin/run.sh && \
     echo 'cd /app' >> /usr/bin/run.sh && \
     echo 'exec python3 webrtc_server_relay.py' >> /usr/bin/run.sh && \
     chmod a+x /usr/bin/run.sh
