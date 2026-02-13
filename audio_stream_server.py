@@ -12,11 +12,15 @@ class AudioStreamServer:
     def __init__(self, relay_server):
         self.relay_server = relay_server
         self.app = web.Application()
+        self.app.router.add_get("/health", self.health_check)
         self.app.router.add_get("/stream/latest.mp3", self.latest_stream_handler)
         self.app.router.add_get("/stream/{stream_id}.mp3", self.stream_handler)
         self.app.router.add_get("/stream/status", self.status_handler)
         self.runner = None
         self.site = None
+
+    async def health_check(self, request):
+        return web.Response(text="OK")
 
     async def latest_stream_handler(self, request):
         if not self.relay_server.active_streams:
