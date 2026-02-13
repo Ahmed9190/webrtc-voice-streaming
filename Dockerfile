@@ -1,8 +1,9 @@
-# Build arguments for cache busting
+ARG BUILD_FROM
+FROM $BUILD_FROM
+
+# Cache busting arguments
 ARG BUILD_DATE
 ARG VCS_REF
-
-FROM $BUILD_FROM
 
 RUN apk add --no-cache python3 py3-pip ffmpeg gcc musl-dev libffi-dev openssl-dev
 

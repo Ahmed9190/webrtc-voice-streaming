@@ -3,5 +3,5 @@ build_from:
   amd64: ghcr.io/home-assistant/amd64-base:latest
   armv7: ghcr.io/home-assistant/armv7-base:latest
 args:
-  BUILD_DATE: "2025-02-13T17:00:00"
-  VCS_REF: "v1.0.10"
+  BUILD_DATE: "2025-02-13T17:05:00"
+  VCS_REF: "v1.0.11"
