@@ -1,8 +1,10 @@
 #!/bin/bash
 set -e
 
-echo "Checking for webrtc_server_relay.py..."
-ls -la /data/webrtc_server_relay.py
+echo "Starting Voice Streaming Backend..."
+echo "Current directory: $(pwd)"
+echo "Contents of /data:"
+ls -la /data/
 
 cd /data
-exec python3 /data/webrtc_server_relay.py
+python3 webrtc_server_relay.py
