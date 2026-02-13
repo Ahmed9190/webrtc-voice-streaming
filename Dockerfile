@@ -1,22 +1,18 @@
 ARG BUILD_FROM
 FROM $BUILD_FROM
 
-# Cache busting arguments
-ARG BUILD_DATE
-ARG VCS_REF
-
-RUN apk add --no-cache python3 py3-pip ffmpeg gcc musl-dev libffi-dev openssl-dev
+RUN apk add --no-cache python3 py3-pip ffmpeg gcc musl-dev libffi-dev openssl-dev curl
 
 WORKDIR /data
 
-# Install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
+# Download Python files directly from GitHub
+RUN curl -sL https://raw.githubusercontent.com/Ahmed9190/webrtc-voice-streaming/main/requirements.txt -o requirements.txt && \
+    curl -sL https://raw.githubusercontent.com/Ahmed9190/webrtc-voice-streaming/main/audio_stream_server.py -o audio_stream_server.py && \
+    curl -sL https://raw.githubusercontent.com/Ahmed9190/webrtc-voice-streaming/main/webrtc_server_relay.py -o webrtc_server_relay.py && \
+    curl -sL https://raw.githubusercontent.com/Ahmed9190/webrtc-voice-streaming/main/config.json -o config.json
 
-# Copy application files with explicit paths
-COPY audio_stream_server.py /data/audio_stream_server.py
-COPY webrtc_server_relay.py /data/webrtc_server_relay.py
-COPY config.json /data/config.json
+# Install dependencies
+RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
 
 # Copy rootfs
 COPY rootfs/ /
