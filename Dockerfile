@@ -28,6 +28,8 @@ RUN echo '#!/usr/bin/with-contenv bashio' > /usr/bin/run.sh && \
     echo 'else' >> /usr/bin/run.sh && \
     echo '  bashio::log.warning "/config directory not found. Check add-on configuration."' >> /usr/bin/run.sh && \
     echo 'fi' >> /usr/bin/run.sh && \
+    echo 'bashio::log.info "Attempting to register Lovelace resource..."' >> /usr/bin/run.sh && \
+    echo 'python3 /app/register_frontend.py || true' >> /usr/bin/run.sh && \
     echo 'cd /app' >> /usr/bin/run.sh && \
     echo 'exec python3 webrtc_server_relay.py' >> /usr/bin/run.sh && \
     chmod a+x /usr/bin/run.sh
