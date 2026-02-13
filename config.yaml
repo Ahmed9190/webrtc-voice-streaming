@@ -2,7 +2,7 @@ name: "Voice Streaming Backend"
 version: "1.0.0"
 slug: "voice_streaming_backend"
 description: "WebRTC-based real-time audio streaming backend for Home Assistant voice applications"
-url: "https://github.com/example/webrtc-voice-streaming"
+url: "https://github.com/Ahmed9190/webrtc-voice-streaming"
 arch:
   - aarch64
   - amd64

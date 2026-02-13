@@ -1,7 +1,16 @@
 ARG BUILD_FROM
 FROM $BUILD_FROM
 
-RUN apk add --no-cache python3 py3-pip ffmpeg gcc musl-dev libffi-dev openssl-dev
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    ffmpeg \
+    gcc \
+    musl-dev \
+    libffi-dev \
+    libssl-dev && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /data
 
