@@ -77,7 +77,7 @@ class AudioStreamServer:
                         if (!polling) return;
 
                         try {
-                            const response = await fetch('/api/voice-audio/stream/status');
+                            const response = await fetch('./status');
                             if (response.ok) {
                                 const data = await response.json();
                                 if (data.active_streams && data.active_streams.length > 0) {

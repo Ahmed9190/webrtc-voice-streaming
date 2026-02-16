@@ -1,14 +1,34 @@
 # WebRTC Voice Streaming Add-on
 
-A high-performance Home Assistant Add-on that provides **WebRTC-based real-time voice streaming** with minimal latency. It includes a custom Lovelace card for easy sender/receiver integration.
+A high-performance Home Assistant Add-on that provides **WebRTC-based real-time voice streaming** with minimal latency. It provides a unified backend for both sending (microphone) and receiving (speaker/announcement) audio.
 
 ## Features
 
-- **Zero-Latency Streaming**: Uses WebRTC for near-instant audio transmission.
-- **Sender & Receiver Cards**: Custom UI components for your dashboards.
-- **Secure**: Automatic SSL/HTTPS support (required for microphone access).
-- **Audio Processing**: High-quality audio handling via `aiortc`.
-- **Health Monitoring**: Built-in status checks.
+- **Unified Signaling**: Single server handles WebRTC signaling, WebSocket events, and MP3 streaming.
+- **Autonomous SSL Cascade**: Zero-configuration SSL. It automatically detects Home Assistant certificates, Ingress wrapping, or generates a local CA as a fallback.
+- **Host Networking**: Uses host network mode for high-reliability peer-to-peer data flow.
+- **Smart Port Hunting**: Automatically finds an available port if the default 8443 or 8080 is taken.
+- **Live Visualization**: Provides real-time audio visualization data for frontend cards.
+
+## Architecture
+
+```mermaid
+graph TD
+    subgraph "Home Assistant (Add-on Container)"
+        A[webrtc_server_relay.py] -->|Signaling| B(WebSocket)
+        A -->|Audio Processing| C(MediaRelay)
+        A -->|MP3 Streaming| D(AudioStreamServer)
+        E[ssl-setup.sh] -->|Auto SSL| A
+    end
+
+    subgraph "Clients (Browser/App)"
+        F[Voice Sending Card] -->|WebRTC| B
+        G[Voice Receiving Card] -->|WebRTC/MP3| B
+    end
+
+    B <--> C
+    D <--> C
+```
 
 ## Installation
 
@@ -16,107 +36,38 @@ A high-performance Home Assistant Add-on that provides **WebRTC-based real-time 
 
 1.  Navigate to **Settings** > **Add-ons** > **Add-on Store**.
 2.  Click the **dots** (top-right) > **Repositories**.
-3.  Add this repository URL.
-4.  Find **"Voice Streaming Backend"** in the list and click **Install**.
+3.  Add `https://github.com/Ahmed9190/webrtc-voice-streaming`.
+4.  Find **"Voice Streaming Backend"** and click **Install**.
 5.  Start the Add-on.
 
-### 2. HTTPS Configuration (Required)
+### 2. HTTPS Configuration
 
-Modern browsers block microphone access on insecure (HTTP) connections. To use the "Sender" card, **you must access Home Assistant via HTTPS**.
+WebRTC **requires** a secure context (HTTPS) for microphone access.
 
-**Option A: Official/Nabu Casa**
-If you use Nabu Casa Cloud or an official certificate (Let's Encrypt), no extra setup is needed.
-
-**Option B: Local Self-Signed (LAN)**
-If you access HA via IP (e.g., `http://192.168.1.5:8123`), you must enable SSL.
-
-1.  **Generate Certificates**:
-    Connect to the add-on via terminal (or use the provided script locally):
-
-    ```bash
-    ./ssl/generate_lan_cert.sh
-    ```
-
-    This creates valid self-signed certificates for your LAN IP.
-
-2.  **Configure Home Assistant**:
-    Copy the generated `ssl` folder to your `/config` directory and update `configuration.yaml`:
-    ```yaml
-    http:
-      ssl_certificate: /config/ssl/fullchain.pem
-      ssl_key: /config/ssl/privkey.pem
-    ```
-3.  **Restart Home Assistant** and add-on.
-
-### 3. Frontend Card Configuration
-
-The add-on automatically attempts to register the custom card resource. If the cards do not appear in your dashboard picker:
-
-1.  Go to **Settings** > **Dashboards** > **Resources**.
-2.  Click **Add Resource**.
-3.  Enter:
-    - **URL**: `/local/voice_streaming_backend/dist/voice-streaming-card-dashboard.js`
-    - **Resource Type**: JavaScript Module
-4.  Click **Create**.
-
-_Note for YAML mode users:_
-
-```yaml
-lovelace:
-  resources:
-    - url: /local/voice_streaming_backend/dist/voice-streaming-card-dashboard.js
-      type: module
-```
+- **Option A (Automatic)**: If you already use DuckDNS, Nabu Casa, or custom SSL in Home Assistant, the add-on will automatically use those certificates.
+- **Option B (Ingress)**: If you use Home Assistant Ingress, the backend works automatically over HA's secure channel.
+- **Option C (Local LAN)**: If you access via IP, the add-on generates a local CA. Visit the add-on's web UI (port 8080 by default) to download and install the CA on your device.
 
 ## Usage
 
-### Using the Cards
+### Dashboard Integration
 
 1.  Edit your Dashboard.
 2.  Search for **Voice Sending Card** or **Voice Receiving Card**.
-3.  Add them to your view.
+3.  Add them to your view. The cards will automatically discover the backend's dynamic port via `/config/www/voice_streaming_backend/server_state.json`.
 
-### API & Ports
+### Direct Audio Access
 
-The Add-on exposes the following ports (configurable):
-
-- **8080** (TCP): Signaling & WebSocket API.
-- **8081** (TCP): Direct Audio Stream (MP3).
+You can listen to the latest stream via a standard MP3 player:
+`http://<IP>:8081/stream/latest.mp3`
 
 ---
 
-## Advanced / Local Development
+## Technical Details
 
-For developers who want to run this project standalone outside of Home Assistant.
-
-### Prerequisites
-
-- Docker & Docker Compose
-- Python 3.11+
-- `ffmpeg`
-
-### Running Locally
-
-1.  **Clone & Env**:
-    ```bash
-    python -m venv venv
-    source venv/bin/activate
-    pip install -r requirements.txt
-    ```
-2.  **Run Server**:
-    ```bash
-    python webrtc_server.py
-    ```
-3.  **Testing**:
-    ```bash
-    python test_server.py
-    ```
-
-### Architecture
-
-- **WebServer**: `aiohttp`
-- **WebRTC**: `aiortc`
-- **Concurrency**: `asyncio`
+- **Signaling**: WebRTC Offer/Answer over WebSocket.
+- **Media**: Opus/PCM via WebRTC, MP3 via `PyAV` (AudioStreamServer).
+- **Network**: Host networking required for robust P2P.
 
 ## License
 

@@ -112,6 +112,7 @@ case "$SSL_MODE" in
         export PORT=8443
         export SSL_CERT_FILE="$CERT_FILE"
         export SSL_KEY_FILE="$KEY_FILE"
+        export LOG_LEVEL=$(jq -r '.log_level // "info"' /data/options.json)
         
         exec python3 /app/webrtc_server_relay.py
         ;;
@@ -121,6 +122,7 @@ case "$SSL_MODE" in
 
         # Start your WebRTC server WITHOUT TLS (Ingress handles it)
         export PORT=8099
+        export LOG_LEVEL=$(jq -r '.log_level // "info"' /data/options.json)
         # No SSL env vars
         
         exec python3 /app/webrtc_server_relay.py

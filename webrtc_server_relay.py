@@ -438,7 +438,7 @@ class VoiceStreamingServer:
             while stream_id in self.active_streams:
                 try:
                     # Pull frame to keep relay active
-                    frame = await asyncio.wait_for(track.recv(), timeout=2.0)
+                    _ = await asyncio.wait_for(track.recv(), timeout=2.0)
 
                     frame_count += 1
                     # Downsample viz data
@@ -584,9 +584,13 @@ class VoiceStreamingServer:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+    logging.basicConfig(
+        level=getattr(logging, log_level, logging.INFO),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
     server = VoiceStreamingServer()
     try:
         asyncio.run(server.run_server())
     except KeyboardInterrupt:
-        print("Stopped")
+        logger.info("Stopped server")

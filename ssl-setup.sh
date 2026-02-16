@@ -216,7 +216,7 @@ setup_ssl() {
     echo "[SSL] ─── Autonomous SSL Setup ───"
     echo "[SSL] 🏠 Local LAN Mode: Prioritizing local IP access"
 
-    # try_ha_certs   && return 0  # Disabled for Local LAN default behavior
+    try_ha_certs   && return 0
     try_ingress    && return 0
     generate_certs && return 0
 
