@@ -29,6 +29,7 @@ class VoiceStreamingServer:
         self.app.router.add_get("/health", self.health_check)
         self.app.router.add_get("/metrics", self.metrics_handler)
         self.app.router.add_get("/ws", self.websocket_handler)
+        self.app.router.add_get("/", self.websocket_handler)
         self.start_time = asyncio.get_event_loop().time()
         self.cleanup_task = None
 

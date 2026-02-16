@@ -32,6 +32,20 @@ check_cert_valid() {
     [ -f "$cert" ] && openssl x509 -checkend $((days * 86400)) -noout -in "$cert" 2>/dev/null
 }
 
+# ── COPY TO SHARED SSL FOR NGINX ──
+share_certificates() {
+    if [ -d "/ssl" ] && [ -f "$SERVER_CERT" ]; then
+        echo "[SSL] 📤 Sharing certificates with NGINX/Home Assistant (/ssl/)..."
+        cp "$SERVER_CERT" "/ssl/ha-webrtc.crt"
+        cp "$SERVER_KEY" "/ssl/ha-webrtc.key"
+        if [ -f "$CA_CERT" ]; then
+            cp "$CA_CERT" "/ssl/ha-webrtc-ca.crt"
+        fi
+        chmod 644 "/ssl/ha-webrtc.crt" "/ssl/ha-webrtc.key" "/ssl/ha-webrtc-ca.crt" 2>/dev/null || true
+        echo "[SSL] ✅ Copied to /ssl/ha-webrtc.crt"
+    fi
+}
+
 # ──────────────────────────────────────────────
 # PRIORITY 1: Home Assistant SSL certificates
 # ──────────────────────────────────────────────
@@ -103,6 +117,7 @@ generate_certs() {
         KEY_FILE="$SERVER_KEY"
         CA_DOWNLOAD="$CA_CERT"
         echo "[SSL] ✅ Using existing auto-generated certificate"
+        share_certificates
         return 0
     fi
 
@@ -183,7 +198,12 @@ EOF
     KEY_FILE="$SERVER_KEY"
     CA_DOWNLOAD="$CA_CERT"
 
-    echo "[SSL] ✅ Certificate generated"
+    # ── COPY TO SHARED SSL FOR NGINX ──
+
+
+    share_certificates
+
+    echo "[SSL] ✅ Certificate ready"
     echo "[SSL]    IP: $LOCAL_IP"
     echo "[SSL]    Valid: 825 days"
     echo "[SSL]    CA download: https://$LOCAL_IP:8443/ca.crt"
