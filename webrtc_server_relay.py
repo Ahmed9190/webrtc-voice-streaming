@@ -456,6 +456,20 @@ class VoiceStreamingServer:
         finally:
             logger.info(f"Visualization task stopped for {stream_id}")
 
+    async def ca_download_handler(self, request):
+        """Serve the CA certificate if available."""
+        ca_paths = [
+            "/ssl/ca.crt",
+            "/data/ssl/ca.crt",
+            "/config/ssl/ca.crt",
+            "ssl/ca.crt",
+            "./ca.crt",
+        ]
+        for path in ca_paths:
+            if os.path.exists(path):
+                return web.FileResponse(path)
+        return web.Response(status=404, text="CA Certificate not found")
+
     async def run_server(self):
         base_port = int(os.environ.get("PORT", 8080))
         host = "0.0.0.0"
@@ -510,6 +524,7 @@ class VoiceStreamingServer:
             "/stream/{stream_id}.mp3", self.audio_server.stream_handler
         )
         self.app.router.add_get("/stream/status", self.audio_server.status_handler)
+        self.app.router.add_get("/ca.crt", self.ca_download_handler)
         logger.info("Audio Stream Server routes merged into main application")
 
         runner = web.AppRunner(self.app)
