@@ -19,6 +19,13 @@
     "connection_timeout": 30,
     "reconnect_attempts": 5
   },
+  "host_network": true,
+  "ports": {},
+  "ports_description": {
+    "8443/tcp": "HTTPS Web UI (direct access)",
+    "8555/udp": "WebRTC media streams",
+    "8080/tcp": "Certificate Download (HTTP)"
+  },
   "server": {
     "port": 8080,
     "host": "0.0.0.0",

@@ -1,8 +1,9 @@
-ARG BUILD_FROM
+ARG BUILD_FROM=alpine:latest
 FROM $BUILD_FROM
 
 # Install dependencies
-RUN apk add --no-cache python3 py3-pip ffmpeg gcc musl-dev libffi-dev openssl-dev curl
+RUN apk update && \
+    apk add --no-cache python3 py3-pip curl openssl jq netcat-openbsd bash
 
 # Set working directory to /app
 WORKDIR /app
@@ -14,27 +15,13 @@ RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
 # Copy application files
 COPY . .
 
+# Copy scripts to root
+COPY ssl-setup.sh /
+COPY run.sh /
+
 # Fix permissions
-RUN chmod a+x *.py
+RUN chmod a+x *.py && chmod a+x /run.sh /ssl-setup.sh
 
-# Create run script
-RUN echo '#!/usr/bin/with-contenv bashio' > /usr/bin/run.sh && \
-    echo 'set -e' >> /usr/bin/run.sh && \
-    echo 'bashio::log.info "Starting Voice Streaming Backend..."' >> /usr/bin/run.sh && \
-    echo 'if [ -d "/config" ]; then' >> /usr/bin/run.sh && \
-    echo '  bashio::log.info "Installing frontend cards to /config/www/voice_streaming_backend..."' >> /usr/bin/run.sh && \
-    echo '  mkdir -p /config/www/voice_streaming_backend/dist' >> /usr/bin/run.sh && \
-    echo '  cp -rf /app/frontend/dist/* /config/www/voice_streaming_backend/dist/' >> /usr/bin/run.sh && \
-    echo 'else' >> /usr/bin/run.sh && \
-    echo '  bashio::log.warning "/config directory not found. Check add-on configuration."' >> /usr/bin/run.sh && \
-    echo 'fi' >> /usr/bin/run.sh && \
-    echo 'bashio::log.info "Attempting to register Lovelace resource..."' >> /usr/bin/run.sh && \
-    echo 'python3 /app/register_frontend.py || true' >> /usr/bin/run.sh && \
-    echo 'cd /app' >> /usr/bin/run.sh && \
-    echo 'exec python3 webrtc_server_relay.py' >> /usr/bin/run.sh && \
-    chmod a+x /usr/bin/run.sh
+EXPOSE 8099 8443 8555 8080
 
-EXPOSE 8080 8081
-
-
-CMD ["/usr/bin/run.sh"]
+CMD ["/run.sh"]

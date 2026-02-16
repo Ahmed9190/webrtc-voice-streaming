@@ -1,5 +1,5 @@
 name: "Voice Streaming Backend"
-version: "1.0.23"
+version: "1.0.24"
 slug: "voice_streaming_backend"
 description: "WebRTC-based real-time audio streaming backend for Home Assistant voice applications"
 url: "https://github.com/Ahmed9190/webrtc-voice-streaming"
@@ -12,11 +12,17 @@ boot: auto
 homeassistant: "2023.12.0"
 map:
   - config:rw
-ports:
-  8080/tcp: 8080
-  8081/tcp: 8081
+host_network: true
+# ports:
+#   8443/tcp: 8443
+#   8555/udp: 8555
+#   8080/tcp: 8080
+ports_description:
+  8443/tcp: "HTTPS Web UI (direct access)"
+  8555/udp: "WebRTC media streams"
+  8080/tcp: "Certificate Download (HTTP)"
 ingress: true
-ingress_port: 8080
+ingress_port: 8099
 panel_icon: mdi:microphone
 options:
   log_level: info

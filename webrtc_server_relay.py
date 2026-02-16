@@ -457,37 +457,111 @@ class VoiceStreamingServer:
             logger.info(f"Visualization task stopped for {stream_id}")
 
     async def run_server(self):
-        port = 8080
+        base_port = int(os.environ.get("PORT", 8080))
         host = "0.0.0.0"
 
         # Check for SSL certificates
         ssl_context = None
-        cert_locations = [
-            ("/ssl/fullchain.pem", "/ssl/privkey.pem"),
-            ("/config/ssl/fullchain.pem", "/config/ssl/privkey.pem"),
-        ]
+        cert_file = os.environ.get("SSL_CERT_FILE")
+        key_file = os.environ.get("SSL_KEY_FILE")
 
-        for cert, key in cert_locations:
-            if os.path.exists(cert) and os.path.exists(key):
+        if cert_file and key_file:
+            if os.path.exists(cert_file) and os.path.exists(key_file):
                 try:
                     ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-                    ssl_context.load_cert_chain(cert, key)
-                    logger.info(f"SSL enabled using certificates from {cert}")
-                    break
+                    ssl_context.load_cert_chain(cert_file, key_file)
+                    logger.info(f"SSL enabled using certificates from {cert_file}")
                 except Exception as e:
-                    logger.error(f"Failed to load SSL certificates from {cert}: {e}")
+                    logger.error(
+                        f"Failed to load SSL certificates from {cert_file}: {e}"
+                    )
+            else:
+                logger.warning(
+                    f"SSL keys defined but files not found: {cert_file}, {key_file}"
+                )
+
+        # Fallback to legacy hardcoded paths
+        if not ssl_context:
+            cert_locations = [
+                ("/ssl/fullchain.pem", "/ssl/privkey.pem"),
+                ("/config/ssl/fullchain.pem", "/config/ssl/privkey.pem"),
+            ]
+            for cert, key in cert_locations:
+                if os.path.exists(cert) and os.path.exists(key):
+                    try:
+                        ssl_context = ssl.create_default_context(
+                            ssl.Purpose.CLIENT_AUTH
+                        )
+                        ssl_context.load_cert_chain(cert, key)
+                        logger.info(
+                            f"SSL enabled using fallback certificates from {cert}"
+                        )
+                        break
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to load SSL certificates from {cert}: {e}"
+                        )
+
+        # Integrate Audio Server Routes
+        self.app.router.add_get(
+            "/stream/latest.mp3", self.audio_server.latest_stream_handler
+        )
+        self.app.router.add_get(
+            "/stream/{stream_id}.mp3", self.audio_server.stream_handler
+        )
+        self.app.router.add_get("/stream/status", self.audio_server.status_handler)
+        logger.info("Audio Stream Server routes merged into main application")
 
         runner = web.AppRunner(self.app)
         await runner.setup()
-        site = web.TCPSite(runner, host, port, ssl_context=ssl_context)
-        await site.start()
 
-        # Start Audio Stream Server (also optional SSL)
-        await self.audio_server.start(host, 8081, ssl_context)
+        # ── SMART PORT HUNTING ──
+        active_port = base_port
+        site = None
+        for i in range(10):  # Try up to 10 ports
+            try:
+                test_port = base_port + i
+                site = web.TCPSite(runner, host, test_port, ssl_context=ssl_context)
+                await site.start()
+                active_port = test_port
+                break
+            except OSError as e:
+                if "Address in use" in str(e) or e.errno == 98:
+                    logger.warning(
+                        f"Port {test_port} is busy, trying {test_port + 1}..."
+                    )
+                else:
+                    raise e
+
+        if not site:
+            logger.error(
+                f"Could not bind to any port in range {base_port}-{base_port + 10}"
+            )
+            return
+
+        # ── STATE PERSISTENCE ──
+        # Write the active port to a state file for the frontend to discover
+        try:
+            state_dir = "/config/www/voice_streaming_backend"
+            os.makedirs(state_dir, exist_ok=True)
+            with open(f"{state_dir}/server_state.json", "w") as f:
+                json.dump(
+                    {
+                        "active_port": active_port,
+                        "ssl": ssl_context is not None,
+                        "started_at": asyncio.get_event_loop().time(),
+                    },
+                    f,
+                )
+            logger.info(f"Valid Server State written to {state_dir}/server_state.json")
+        except Exception as e:
+            logger.warning(f"Could not write server state: {e}")
 
         self.cleanup_task = asyncio.create_task(self.cleanup_stale_streams())
         protocol = "https/wss" if ssl_context else "http/ws"
-        logger.info(f"Server started on {protocol}://{host}:{port}")
+        logger.info(
+            f"✅ Server successfully started on {protocol}://{host}:{active_port}"
+        )
 
         while True:
             await asyncio.sleep(3600)
