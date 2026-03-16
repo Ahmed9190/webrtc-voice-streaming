@@ -31,7 +31,7 @@ class License(Base):
     token = Column(Text, unique=True, nullable=True)
 
     issued_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    expires_at = Column(DateTime, nullable=False)
+    expires_at = Column(DateTime, nullable=True)  # null = unlimited
     last_validated = Column(DateTime)
 
     status = Column(String(20), default="pending", nullable=False)

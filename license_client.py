@@ -80,7 +80,7 @@ class LicenseClient:
         2. Try to activate (or use cached token).
         3. Validate the token.
 
-        Returns True if licensed, False otherwise.
+        Returns True if licensed (or pending activation), False otherwise.
         """
         self.hardware_id, self.hardware_components = generate_hardware_id()
         self.session_id = self._make_session_id()
@@ -89,9 +89,22 @@ class LicenseClient:
         # Try activation (server may already have us – that's fine)
         activated = await self._activate()
 
+        # Check if we have a pending token
+        if self.token and self.token.startswith("PENDING_"):
+            logger.warning("License is pending admin activation.")
+            logger.info(
+                "Add-on will start but functionality may be limited until activated."
+            )
+            # Still return True to allow startup, validation will handle the rest
+            return True
+
         if not activated:
             # Try cached token with grace period
             if self._load_cached_token():
+                # Check if cached token is pending
+                if self.token and self.token.startswith("PENDING_"):
+                    logger.warning("Cached license is pending admin activation.")
+                    return True
                 logger.info("Using cached license token (grace period).")
                 return True
             logger.error("No valid license and no cached token within grace period.")
@@ -100,6 +113,10 @@ class LicenseClient:
         # Validate immediately
         valid = await self._validate()
         if not valid:
+            # If validation failed but we have a token, check if it's pending
+            if self.token and self.token.startswith("PENDING_"):
+                logger.warning("Validation failed for pending license.")
+                return True  # Allow startup for pending licenses
             logger.warning(
                 "Activation succeeded but initial validation failed – "
                 "allowing startup with cached token."
@@ -164,10 +181,15 @@ class LicenseClient:
     def is_licensed(self) -> bool:
         return self.token is not None
 
+    @property
+    def is_pending(self) -> bool:
+        return self.token is not None and self.token.startswith("PENDING_")
+
     def get_status(self) -> dict:
         """Return license status for health/metrics endpoints."""
         return {
             "licensed": self.is_licensed,
+            "pending_activation": self.is_pending,
             "hardware_id_preview": (
                 f"{self.hardware_id[:8]}...{self.hardware_id[-8:]}"
                 if self.hardware_id
@@ -193,7 +215,23 @@ class LicenseClient:
             return False
 
         if resp.get("success"):
-            self.token = resp["token"]
+            token = resp.get("token", "")
+
+            # Check if pending admin activation
+            if token.startswith("PENDING_"):
+                # Hardware registered but waiting for admin activation
+                self.token = token
+                self._save_token()
+                self._save_state("pending_activation")
+                logger.warning(
+                    "Hardware registered. Waiting for admin activation. Add-on will run with limited functionality."
+                )
+                logger.info(f"Status: {resp.get('message', 'Pending activation')}")
+                # Still return True so add-on can start, but validation will fail until activated
+                return True
+
+            # Full activation - token is valid
+            self.token = token
             self._save_token()
             self._save_state("activated")
             logger.info("License activated successfully.")
@@ -214,6 +252,23 @@ class LicenseClient:
             if self._load_cached_token():
                 return True
 
+        # Check for pending status in error response
+        if "pending activation" in detail.lower():
+            # Server returned error but we might have a pending token
+            if (
+                self._load_cached_token()
+                and self.token
+                and not self.token.startswith("PENDING_")
+            ):
+                return True
+            logger.warning(
+                "License pending activation. Admin must approve from dashboard."
+            )
+            # Try to save current token as pending if exists
+            if self.token:
+                self._save_state("pending_activation")
+                return True
+
         logger.error(f"Activation failed: {detail}")
         return False
 
@@ -221,6 +276,18 @@ class LicenseClient:
         """Validate the current token. Returns True if valid."""
         if not self.token:
             return False
+
+        # Check for pending token - can't validate until activated
+        if self.token.startswith("PENDING_"):
+            logger.warning("License pending admin activation. Validation skipped.")
+            # Check if we have a cached real token
+            if self._load_cached_token():
+                if self.token.startswith("PENDING_"):
+                    # Still pending, use grace period
+                    return self._is_within_grace_period()
+            else:
+                # No cached token, use grace period
+                return self._is_within_grace_period()
 
         payload = {
             "token": self.token,
@@ -247,8 +314,7 @@ class LicenseClient:
 
         # Hard failures – no grace
         if any(
-            kw in detail.lower()
-            for kw in ("suspended", "revoked", "hardware mismatch")
+            kw in detail.lower() for kw in ("suspended", "revoked", "hardware mismatch")
         ):
             self._save_state("rejected")
             return False
@@ -259,6 +325,11 @@ class LicenseClient:
     async def _heartbeat(self) -> bool:
         """Send keep-alive heartbeat."""
         if not self.token:
+            return False
+
+        # Don't send heartbeat for pending tokens
+        if self.token.startswith("PENDING_"):
+            logger.debug("Skipping heartbeat for pending license.")
             return False
 
         payload = {
@@ -349,11 +420,10 @@ class LicenseClient:
 
 # ── CLI entry-point (called from run.sh) ────────────────────────────
 
+
 def main():
     parser = argparse.ArgumentParser(description="License Client CLI")
-    parser.add_argument(
-        "action", choices=["activate"], help="Action to perform"
-    )
+    parser.add_argument("action", choices=["activate"], help="Action to perform")
     parser.add_argument("--server", required=True, help="License server URL")
     parser.add_argument("--email", required=True, help="License email")
     parser.add_argument("--purchase-code", required=True, help="Purchase code")

@@ -80,11 +80,14 @@ class TokenGenerator:
             "hwid": hardware_id,
             "purchase_code": purchase_code,
             "iat": now,
-            "exp": now + timedelta(days=duration_days),
             "jti": token_id,
             "addon": "webrtc_voice_streaming_pro",
             "version": "1.0.0",
         }
+
+        # Only add expiration for limited licenses
+        if duration_days is not None:
+            payload["exp"] = now + timedelta(days=duration_days)
 
         token = jwt.encode(payload, self.private_key, algorithm="RS256")
         checksum = self._generate_hardware_checksum(token, hardware_id)

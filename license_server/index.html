@@ -2,6 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>License Server Dashboard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -818,10 +821,11 @@
     <!-- Modal: Create License (Admin) -->
     <div class="modal-overlay hidden" id="modal-activate">
       <div class="modal">
-        <h3>◆ Create New License</h3>
-        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 18px">
+        <h3 id="modal-activate-title">◆ Create New License</h3>
+        <p id="modal-activate-desc" style="font-size: 13px; color: var(--text-muted); margin-bottom: 18px">
           Pre-approve a license for a customer. They will bind their hardware when they install the add-on.
         </p>
+        <input type="hidden" id="edit-purchase-code" />
         <div class="form-grid">
           <div class="form-group">
             <label>Customer Email *</label>
@@ -829,19 +833,32 @@
           </div>
           <div class="form-group">
             <label>Purchase Code *</label>
-            <div class="input-group">
-              <input id="act-code" type="text" placeholder="ABCD-1234-EFGH" />
-              <button class="btn btn-ghost" type="button" onclick="generatePurchaseCode()" title="Generate random code">Generate</button>
+            <div style="display: flex; gap: 8px; align-items: center">
+              <input id="act-code" type="text" placeholder="ABCD-1234-EFGH" style="flex: 1" />
+              <button class="btn btn-ghost btn-sm" type="button" onclick="generatePurchaseCode()" title="Generate random code">Generate</button>
             </div>
           </div>
-          <div class="form-group">
+          <div class="form-group full">
+            <label>License Type</label>
+            <div style="display: flex; gap: 16px; margin-top: 4px;">
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-primary);">
+                <input type="radio" name="license-type" value="limited" checked onchange="toggleDurationField()" style="width: 16px; height: 16px;" />
+                Limited (days)
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-primary);">
+                <input type="radio" name="license-type" value="unlimited" onchange="toggleDurationField()" style="width: 16px; height: 16px;" />
+                Unlimited
+              </label>
+            </div>
+          </div>
+          <div class="form-group full" id="duration-field">
             <label>Duration (days) — default 365</label>
             <input id="act-days" type="number" placeholder="365" value="365" min="1" />
           </div>
         </div>
         <div class="form-actions">
           <button class="btn btn-ghost" onclick="closeModal('modal-activate')">Cancel</button>
-          <button class="btn btn-primary" onclick="createLicense()">Create License</button>
+          <button class="btn btn-primary" id="modal-activate-btn" onclick="createLicense()">Create License</button>
         </div>
       </div>
     </div>
@@ -855,6 +872,40 @@
         <div class="form-actions">
           <button class="btn btn-ghost" onclick="copyToken()">Copy</button>
           <button class="btn btn-primary" onclick="closeModal('modal-token')">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Confirmation -->
+    <div class="modal-overlay hidden" id="modal-confirm">
+      <div class="modal" style="max-width: 420px;">
+        <div style="text-align: center; margin-bottom: 16px;">
+          <div id="confirm-icon" style="width: 56px; height: 56px; margin: 0 auto 14px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; background: rgba(245, 158, 11, 0.15); color: var(--accent-amber);">!</div>
+          <h3 id="confirm-title" style="font-size: 18px; font-weight: 700; margin-bottom: 8px;">Confirm Action</h3>
+          <p id="confirm-message" style="font-size: 13px; color: var(--text-muted); line-height: 1.5;">Are you sure?</p>
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: center;">
+          <button class="btn btn-ghost" id="confirm-cancel" style="flex: 1;">Cancel</button>
+          <button class="btn btn-primary" id="confirm-ok" style="flex: 1;">Confirm</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Activate License with Hardware ID -->
+    <div class="modal-overlay hidden" id="modal-activate-hardware">
+      <div class="modal" style="max-width: 480px;">
+        <h3>Activate License</h3>
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 18px" id="activate-modal-desc">
+          Click Activate to approve this license. Hardware ID will be auto-detected from the add-on.
+        </p>
+        <input type="hidden" id="activate-license-code" />
+        <div class="form-group full">
+          <label>Hardware ID (optional - leave empty if already registered)</label>
+          <input id="activate-hardware-id" type="text" placeholder="Auto-detected from add-on" style="font-family: monospace; font-size: 12px;" />
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-ghost" onclick="closeModal('modal-activate-hardware')">Cancel</button>
+          <button class="btn btn-primary" onclick="submitActivate()">Activate</button>
         </div>
       </div>
     </div>
@@ -883,7 +934,7 @@
             <span id="health-label" style="font-weight: 600">Checking...</span>
           </div>
           <div style="color: var(--text-muted); font-size: 12px" id="health-sub">API: localhost:8000</div>
-          <button class="btn btn-ghost btn-sm" style="margin-top: 10px; width: 100%; justify-content: center" onclick="refreshAll()">↻ Refresh</button>
+          <button class="btn btn-ghost btn-sm" style="margin-top: 10px; width: 100%; justify-content: center" onclick="refreshAll()">&#8635; Refresh</button>
         </div>
       </aside>
 
@@ -972,7 +1023,7 @@
           <div class="card">
             <div class="card-header">
               <h3>◆ Recent Licenses</h3>
-              <button class="btn btn-primary btn-sm" onclick="openModal('modal-activate')">+ Create License</button>
+              <button class="btn btn-primary btn-sm" onclick="resetCreateModal(); openModal('modal-activate')">+ Create License</button>
             </div>
             <div class="table-wrap">
               <table>
@@ -1004,7 +1055,7 @@
 
           <div class="search-row">
             <div class="search-wrap">
-              <span class="search-icon">🔍</span>
+              <span class="search-icon">&#128269;</span>
               <input type="text" id="license-search" placeholder="Search by email or purchase code…" oninput="filterLicenses()" />
             </div>
             <select id="license-filter" onchange="filterLicenses()" style="width: 140px">
@@ -1015,8 +1066,8 @@
               <option value="revoked">Revoked</option>
               <option value="expired">Expired</option>
             </select>
-            <button class="btn btn-primary" onclick="openModal('modal-activate')">+ Create License</button>
-            <button class="btn btn-ghost" onclick="loadLicenses()">↻</button>
+            <button class="btn btn-primary" onclick="resetCreateModal(); openModal('modal-activate')">+ Create License</button>
+            <button class="btn btn-ghost" onclick="loadLicenses()">&#8635;</button>
           </div>
 
           <div class="card">
@@ -1050,7 +1101,7 @@
             <p>Live add-on sessions — updated every 30 seconds. Timeout: 30 min.</p>
           </div>
           <div class="search-row">
-            <button class="btn btn-ghost" onclick="loadSessions()">↻ Refresh</button>
+            <button class="btn btn-ghost" onclick="loadSessions()">&#8635; Refresh</button>
             <span style="font-size: 12px; color: var(--muted)" id="sessions-updated"></span>
           </div>
           <div class="card">
@@ -1098,7 +1149,7 @@
           <div class="card">
             <div class="card-header">
               <h3>Incident Log</h3>
-              <button class="btn btn-ghost btn-sm" onclick="loadIncidents()">↻ Refresh</button>
+              <button class="btn btn-ghost btn-sm" onclick="loadIncidents()">&#8635; Refresh</button>
             </div>
             <div class="table-wrap">
               <table>
@@ -1130,7 +1181,7 @@
           </div>
           <div class="search-row">
             <div class="search-wrap">
-              <span class="search-icon">🔍</span>
+              <span class="search-icon">&#128269;</span>
               <input type="text" id="log-search" placeholder="Filter by email, session ID or result…" oninput="filterLogs()" />
             </div>
             <select id="log-filter" onchange="filterLogs()" style="width: 140px">
@@ -1138,7 +1189,7 @@
               <option value="true">Valid</option>
               <option value="false">Invalid</option>
             </select>
-            <button class="btn btn-ghost" onclick="loadLogs()">↻</button>
+            <button class="btn btn-ghost" onclick="loadLogs()">&#8635;</button>
           </div>
           <div class="card">
             <div class="table-wrap">
@@ -1236,11 +1287,11 @@
               <div style="display: flex; gap: 16px; flex-wrap: wrap">
                 <div>
                   <p style="font-size: 13px; color: var(--muted); margin-bottom: 8px">Truncate all DB tables (dev/test only)</p>
-                  <button class="btn btn-danger-ghost" onclick="confirmTruncate()">🗑️ Truncate Database</button>
+                  <button class="btn btn-danger-ghost" onclick="confirmTruncate()">Truncate Database</button>
                 </div>
                 <div>
                   <p style="font-size: 13px; color: var(--muted); margin-bottom: 8px">Copy the full Docker DB connection command</p>
-                  <button class="btn btn-ghost btn-sm" onclick="copyDbCmd()">📋 Copy DB Connect Command</button>
+                  <button class="btn btn-ghost btn-sm" onclick="copyDbCmd()">Copy DB Connect Command</button>
                 </div>
               </div>
             </div>
@@ -1269,7 +1320,7 @@
 
       /* ─── Toast ─── */
       function toast(msg, type = "info") {
-        const icons = { success: "✓", error: "✕", info: "●" };
+        const icons = { success: "&#10003;", error: "&#10005;", info: "&#9679;" };
         const el = document.createElement("div");
         el.className = `toast ${type}`;
         el.innerHTML = `<span style="font-size:14px">${icons[type]}</span><span>${msg}</span>`;
@@ -1283,6 +1334,54 @@
       }
       function closeModal(id) {
         document.getElementById(id).classList.add("hidden");
+      }
+
+      /* ─── Confirmation Modal ─── */
+      function showConfirm(title, message, icon = "!", isDanger = false, onConfirm) {
+        var iconEl = document.getElementById("confirm-icon");
+        
+        document.getElementById("confirm-title").textContent = title;
+        document.getElementById("confirm-message").textContent = message;
+        
+        if (isDanger) {
+          iconEl.innerHTML = "&#10005;";
+          iconEl.style.background = "rgba(244, 63, 94, 0.15)";
+          iconEl.style.color = "var(--accent-rose)";
+        } else {
+          iconEl.innerHTML = "&#10003;";
+          iconEl.style.background = "rgba(16, 185, 129, 0.15)";
+          iconEl.style.color = "var(--accent-emerald)";
+        }
+        
+        var okBtn = document.getElementById("confirm-ok");
+        var cancelBtn = document.getElementById("confirm-cancel");
+        
+        // Remove any existing event listeners by cloning
+        var newOkBtn = okBtn.cloneNode(true);
+        okBtn.parentNode.replaceChild(newOkBtn, okBtn);
+        var newCancelBtn = cancelBtn.cloneNode(true);
+        cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+        
+        newOkBtn.onclick = function() {
+          closeModal("modal-confirm");
+          if (onConfirm) onConfirm();
+          resolvePromise(true);
+        };
+        
+        newCancelBtn.onclick = function() {
+          closeModal("modal-confirm");
+          resolvePromise(false);
+        };
+        
+        openModal("modal-confirm");
+        
+        // Create promise manually for better browser compatibility
+        var resolver;
+        var promise = new Promise(function(resolve) {
+          resolver = resolve;
+        });
+        window.resolvePromise = resolver;
+        return promise;
       }
 
       /* ─── API helper ─── */
@@ -1399,13 +1498,14 @@
             // Build contextual action button
             let actionBtn = "";
             if (l.status === "active") {
-              actionBtn = `<button class="btn btn-ghost btn-sm" style="color:var(--warning)" onclick="licenseAction('${rawCode}','suspend')">⏸ Suspend</button>`;
+              actionBtn = `<button class="btn btn-ghost btn-sm" style="color:var(--accent-amber)" onclick="licenseAction('${rawCode}','suspend')">Suspend</button>`;
             } else if (l.status === "suspended") {
-              actionBtn = `<button class="btn btn-ghost btn-sm" style="color:var(--success)" onclick="licenseAction('${rawCode}','reinstate')">▶ Reinstate</button>`;
+              actionBtn = `<button class="btn btn-ghost btn-sm" style="color:var(--accent-emerald)" onclick="licenseAction('${rawCode}','reinstate')">Reinstate</button>`;
             } else if (l.status === "pending") {
-              actionBtn = `<button class="btn btn-ghost btn-sm" style="color:var(--muted)" onclick="licenseAction('${rawCode}','revoke')">🚫 Revoke</button>`;
+              actionBtn = `<button class="btn btn-ghost btn-sm" style="color:var(--accent-emerald)" onclick="licenseAction('${rawCode}','activate')">Activate</button>
+                <button class="btn btn-ghost btn-sm" style="color:var(--accent-rose)" onclick="licenseAction('${rawCode}','revoke')">Revoke</button>`;
             } else {
-              actionBtn = `<button class="btn btn-ghost btn-sm" style="color:var(--success)" onclick="licenseAction('${rawCode}','reinstate')">↩ Reinstate</button>`;
+              actionBtn = `<button class="btn btn-ghost btn-sm" style="color:var(--accent-emerald)" onclick="licenseAction('${rawCode}','reinstate')">Reinstate</button>`;
             }
             return `
     <tr>
@@ -1418,8 +1518,9 @@
       <td style="white-space:nowrap;">
         <div style="display:flex;gap:4px;flex-wrap:wrap;">
           ${actionBtn}
-          ${l.hardware_id ? `<button class="btn btn-ghost btn-sm" style="color:var(--muted)" onclick="licenseAction('${rawCode}','reset')" title="Unbind hardware — resets to pending">🔄 Reset</button>` : ""}
-          <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="licenseDelete('${rawCode}')">🗑 Delete</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--accent-cyan)" onclick='openEditModal(${JSON.stringify(l)})' title="Edit license details">Edit</button>
+          ${l.hardware_id ? `<button class="btn btn-ghost btn-sm" style="color:var(--text-muted)" onclick="licenseAction('${rawCode}','reset')" title="Unbind hardware — resets to pending">Reset</button>` : ""}
+          <button class="btn btn-ghost btn-sm" style="color:var(--accent-rose)" onclick="licenseDelete('${rawCode}')">Delete</button>
         </div>
       </td>
     </tr>`;
@@ -1439,33 +1540,110 @@
       }
 
       /* ─── Create License (Admin) ─── */
+      function toggleDurationField() {
+        const isLimited = document.querySelector('input[name="license-type"]:checked').value === "limited";
+        document.getElementById("duration-field").style.display = isLimited ? "flex" : "none";
+      }
+
       function generatePurchaseCode() {
         const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/I/1 for clarity
         const seg = (n) => Array.from({ length: n }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
         document.getElementById("act-code").value = `${seg(4)}-${seg(4)}-${seg(4)}`;
       }
 
+      function openEditModal(license) {
+        document.getElementById("modal-activate-title").textContent = "◆ Edit License";
+        document.getElementById("modal-activate-desc").textContent = "Update license details. Leave duration empty to keep current value.";
+        document.getElementById("edit-purchase-code").value = license.purchase_code;
+        document.getElementById("act-email").value = license.user_email || "";
+        document.getElementById("act-code").value = license.purchase_code;
+        document.getElementById("act-code").disabled = true;
+        
+        // Check if unlimited (expires_at is null or "unlimited")
+        const isUnlimited = !license.expires_at || license.expires_at === "unlimited";
+        document.querySelector('input[name="license-type"][value="' + (isUnlimited ? "unlimited" : "limited") + '"]').checked = true;
+        toggleDurationField();
+        
+        document.getElementById("modal-activate-btn").textContent = "Save Changes";
+        document.getElementById("modal-activate-btn").onclick = saveLicenseChanges;
+        openModal("modal-activate");
+      }
+
+      function resetCreateModal() {
+        document.getElementById("modal-activate-title").textContent = "◆ Create New License";
+        document.getElementById("modal-activate-desc").textContent = "Pre-approve a license for a customer. They will bind their hardware when they install the add-on.";
+        document.getElementById("edit-purchase-code").value = "";
+        document.getElementById("act-email").value = "";
+        document.getElementById("act-code").value = "";
+        document.getElementById("act-code").disabled = false;
+        document.getElementById("act-days").value = "365";
+        document.querySelector('input[name="license-type"][value="limited"]').checked = true;
+        toggleDurationField();
+        document.getElementById("modal-activate-btn").textContent = "Create License";
+        document.getElementById("modal-activate-btn").onclick = createLicense;
+      }
+
+      async function saveLicenseChanges() {
+        const email = document.getElementById("act-email").value.trim();
+        const code = document.getElementById("edit-purchase-code").value.trim();
+        const licenseType = document.querySelector('input[name="license-type"]:checked').value;
+        const daysInput = document.getElementById("act-days").value.trim();
+        
+        if (!email || !code) {
+          toast("Email and Purchase Code are required.", "error");
+          return;
+        }
+
+        const payload = { email, action: "update", extend_days: null, set_unlimited: null };
+        
+        if (licenseType === "unlimited") {
+          payload.set_unlimited = true;
+        } else if (daysInput) {
+          payload.extend_days = parseInt(daysInput);
+        }
+
+        const data = await api(`/api/v1/admin/licenses/${encodeURIComponent(code)}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+
+        if (data.success) {
+          toast("License updated successfully!", "success");
+          closeModal("modal-activate");
+          resetCreateModal();
+          loadLicenses();
+        } else {
+          toast(data.detail || "Failed to update license.", "error");
+        }
+      }
+
       async function createLicense() {
         const email = document.getElementById("act-email").value.trim();
         const code = document.getElementById("act-code").value.trim();
-        const days = parseInt(document.getElementById("act-days").value) || 365;
+        const licenseType = document.querySelector('input[name="license-type"]:checked').value;
+        const days = licenseType === "limited" ? (parseInt(document.getElementById("act-days").value) || 365) : null;
 
         if (!email || !code) {
           toast("Email and Purchase Code are required.", "error");
           return;
         }
 
+        const payload = { email, purchase_code: code };
+        if (days !== null) {
+          payload.duration_days = days;
+        } else {
+          payload.unlimited = true;
+        }
+
         const data = await api("/api/v1/admin/licenses", {
           method: "POST",
-          body: JSON.stringify({ email, purchase_code: code, duration_days: days }),
+          body: JSON.stringify(payload),
         });
 
         if (data.success) {
           toast(`License created for ${email}! Customer can now activate on their device.`, "success");
           closeModal("modal-activate");
-          document.getElementById("act-email").value = "";
-          document.getElementById("act-code").value = "";
-          document.getElementById("act-days").value = "365";
+          resetCreateModal();
           loadLicenses();
         } else {
           toast(data.detail || data.message || "Failed to create license.", "error");
@@ -1474,9 +1652,30 @@
 
       /* ─── License Actions (suspend / reinstate / revoke / reset) ─── */
       async function licenseAction(purchaseCode, action) {
-        const labels = { suspend: "Suspend", reinstate: "Reinstate", revoke: "Revoke", reset: "Reset hardware binding for" };
+        if (action === "activate") {
+          // Open modal to enter hardware ID
+          document.getElementById("activate-license-code").value = purchaseCode;
+          document.getElementById("activate-hardware-id").value = "";
+          openModal("modal-activate-hardware");
+          return;
+        }
+        
+        const labels = { 
+          suspend: "Suspend License", 
+          reinstate: "Reinstate License", 
+          revoke: "Revoke License", 
+          reset: "Reset Hardware Binding"
+        };
         const label = labels[action] || action;
-        if (!confirm(`${label} license "${purchaseCode}"?`)) return;
+        const isDanger = action === "suspend" || action === "revoke";
+        
+        const confirmed = await showConfirm(
+          label,
+          `Are you sure you want to ${action} license "${purchaseCode}"?`,
+          isDanger ? "!" : "✓",
+          isDanger
+        );
+        if (!confirmed) return;
 
         const data = await api(`/api/v1/admin/licenses/${encodeURIComponent(purchaseCode)}`, {
           method: "PATCH",
@@ -1493,7 +1692,13 @@
 
       /* ─── License Delete ─── */
       async function licenseDelete(purchaseCode) {
-        if (!confirm(`⚠️ Permanently delete license "${purchaseCode}" and ALL its logs, sessions and incidents?\n\nThis cannot be undone.`)) return;
+        const confirmed = await showConfirm(
+          "Delete License",
+          `Permanently delete license "${purchaseCode}" and ALL its logs, sessions, and incidents? This cannot be undone.`,
+          "✕",
+          true
+        );
+        if (!confirmed) return;
 
         const data = await api(`/api/v1/admin/licenses/${encodeURIComponent(purchaseCode)}`, {
           method: "DELETE",
@@ -1506,6 +1711,36 @@
           toast(data.detail || "Delete failed.", "error");
         }
       }
+      
+      /* ─── Submit Activate with Hardware ID ─── */
+      async function submitActivate() {
+        const purchaseCode = document.getElementById("activate-license-code").value;
+        const hardwareId = document.getElementById("activate-hardware-id").value.trim();
+        
+        if (hardwareId && hardwareId.length !== 64) {
+          toast("Hardware ID must be a 64-character SHA256 hash", "error");
+          return;
+        }
+        
+        const payload = { action: "activate" };
+        if (hardwareId) {
+          payload.hardware_id = hardwareId;
+        }
+        
+        const data = await api(`/api/v1/admin/licenses/${encodeURIComponent(purchaseCode)}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+
+        if (data.success) {
+          toast("License activated successfully", "success");
+          closeModal("modal-activate-hardware");
+          loadLicenses();
+        } else {
+          toast(data.detail || "Failed to activate license", "error");
+        }
+      }
+
       function copyToken() {
         try {
           navigator.clipboard.writeText(document.getElementById("modal-token-content").textContent);
@@ -1706,12 +1941,19 @@
       }
 
       function confirmTruncate() {
-        if (!confirm("⚠️ This will DELETE all licenses, sessions, logs and incidents from the database.\n\nOnly use in development/testing!\n\nAre you sure?"))
-          return;
-        toast(
-          'Truncate must be run via CLI: docker-compose exec db psql -U license_user -d webrtc_licenses -c "TRUNCATE licenses, validation_logs, session_states, security_incidents CASCADE;"',
-          "info",
-        );
+        showConfirm(
+          "Truncate Database",
+          "This will DELETE all licenses, sessions, logs, and incidents from the database. Only use in development/testing!",
+          "!",
+          true
+        ).then((confirmed) => {
+          if (confirmed) {
+            toast(
+              'Truncate must be run via CLI: docker-compose exec db psql -U license_user -d webrtc_licenses -c "TRUNCATE licenses, validation_logs, session_states, security_incidents CASCADE;"',
+              "info",
+            );
+          }
+        });
       }
 
       function copyDbCmd() {
