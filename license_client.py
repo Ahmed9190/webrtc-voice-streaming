@@ -80,7 +80,7 @@ class LicenseClient:
         2. Try to activate (or use cached token).
         3. Validate the token.
 
-        Returns True if licensed (or pending activation), False otherwise.
+        Returns True ONLY if license is ACTIVE. Returns False for pending/suspended.
         """
         self.hardware_id, self.hardware_components = generate_hardware_id()
         self.session_id = self._make_session_id()
@@ -89,22 +89,19 @@ class LicenseClient:
         # Try activation (server may already have us – that's fine)
         activated = await self._activate()
 
-        # Check if we have a pending token
+        # Check if we have a pending token - NOT ALLOWED to start
         if self.token and self.token.startswith("PENDING_"):
-            logger.warning("License is pending admin activation.")
-            logger.info(
-                "Add-on will start but functionality may be limited until activated."
-            )
-            # Still return True to allow startup, validation will handle the rest
-            return True
+            logger.error("License is PENDING - waiting for admin activation.")
+            logger.error("Please contact admin to activate your license.")
+            return False
 
         if not activated:
             # Try cached token with grace period
             if self._load_cached_token():
-                # Check if cached token is pending
+                # Check if cached token is pending - NOT ALLOWED
                 if self.token and self.token.startswith("PENDING_"):
-                    logger.warning("Cached license is pending admin activation.")
-                    return True
+                    logger.error("Cached license is PENDING - cannot start.")
+                    return False
                 logger.info("Using cached license token (grace period).")
                 return True
             logger.error("No valid license and no cached token within grace period.")
@@ -115,8 +112,8 @@ class LicenseClient:
         if not valid:
             # If validation failed but we have a token, check if it's pending
             if self.token and self.token.startswith("PENDING_"):
-                logger.warning("Validation failed for pending license.")
-                return True  # Allow startup for pending licenses
+                logger.error("License validation failed for pending license.")
+                return False
             logger.warning(
                 "Activation succeeded but initial validation failed – "
                 "allowing startup with cached token."
@@ -179,7 +176,7 @@ class LicenseClient:
 
     @property
     def is_licensed(self) -> bool:
-        return self.token is not None
+        return self.token is not None and not self.token.startswith("PENDING_")
 
     @property
     def is_pending(self) -> bool:
@@ -202,7 +199,7 @@ class LicenseClient:
     # ── Private: HTTP calls ─────────────────────────────────────────
 
     async def _activate(self) -> bool:
-        """Activate license on the server. Returns True on success."""
+        """Activate license on the server. Returns True only if fully activated."""
         payload = {
             "email": self.email,
             "purchase_code": self.purchase_code,
@@ -217,18 +214,18 @@ class LicenseClient:
         if resp.get("success"):
             token = resp.get("token", "")
 
-            # Check if pending admin activation
+            # Check if pending admin activation - NOT ALLOWED to start
             if token.startswith("PENDING_"):
                 # Hardware registered but waiting for admin activation
                 self.token = token
                 self._save_token()
                 self._save_state("pending_activation")
-                logger.warning(
-                    "Hardware registered. Waiting for admin activation. Add-on will run with limited functionality."
+                logger.error(
+                    "Hardware registered but waiting for admin activation. "
+                    "Cannot start without active license."
                 )
                 logger.info(f"Status: {resp.get('message', 'Pending activation')}")
-                # Still return True so add-on can start, but validation will fail until activated
-                return True
+                return False  # Return False - license NOT active
 
             # Full activation - token is valid
             self.token = token
@@ -244,50 +241,40 @@ class LicenseClient:
         if "already activated" in detail.lower():
             logger.info("Hardware already activated – loading cached token.")
             if self._load_cached_token():
+                # Make sure it's not pending
+                if self.token and self.token.startswith("PENDING_"):
+                    logger.error("Already activated but token is still pending.")
+                    return False
                 return True
             logger.warning("Already activated but no cached token found.")
 
         if "already has an active license" in detail.lower():
             logger.info("Email already has active license – loading cached token.")
             if self._load_cached_token():
+                if self.token and self.token.startswith("PENDING_"):
+                    logger.error("Already has license but token is pending.")
+                    return False
                 return True
 
         # Check for pending status in error response
         if "pending activation" in detail.lower():
-            # Server returned error but we might have a pending token
-            if (
-                self._load_cached_token()
-                and self.token
-                and not self.token.startswith("PENDING_")
-            ):
-                return True
-            logger.warning(
+            logger.error(
                 "License pending activation. Admin must approve from dashboard."
             )
-            # Try to save current token as pending if exists
-            if self.token:
-                self._save_state("pending_activation")
-                return True
+            return False
 
         logger.error(f"Activation failed: {detail}")
         return False
 
     async def _validate(self, telemetry: dict = None) -> bool:
-        """Validate the current token. Returns True if valid."""
+        """Validate the current token. Returns True only if valid and active."""
         if not self.token:
             return False
 
-        # Check for pending token - can't validate until activated
+        # Check for pending token - CANNOT validate pending licenses
         if self.token.startswith("PENDING_"):
-            logger.warning("License pending admin activation. Validation skipped.")
-            # Check if we have a cached real token
-            if self._load_cached_token():
-                if self.token.startswith("PENDING_"):
-                    # Still pending, use grace period
-                    return self._is_within_grace_period()
-            else:
-                # No cached token, use grace period
-                return self._is_within_grace_period()
+            logger.error("License is PENDING - cannot validate. Admin must activate.")
+            return False
 
         payload = {
             "token": self.token,

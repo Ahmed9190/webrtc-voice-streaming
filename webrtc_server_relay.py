@@ -499,6 +499,7 @@ class VoiceStreamingServer:
         """Collect runtime telemetry for license validation."""
         try:
             import resource
+
             mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024  # MB
         except Exception:
             mem = 0.0
@@ -507,10 +508,8 @@ class VoiceStreamingServer:
             "active_streams": len(self.active_streams),
             "connected_clients": len(self.connections),
             "memory_usage": mem,
-            "uptime_seconds": int(
-                asyncio.get_event_loop().time() - self.start_time
-            ),
-            "addon_version": "1.2.1",
+            "uptime_seconds": int(asyncio.get_event_loop().time() - self.start_time),
+            "addon_version": "1.3.0",
         }
 
     async def _license_loop(self):
@@ -644,7 +643,9 @@ class VoiceStreamingServer:
 
         try:
             audio_port = int(os.environ.get("AUDIO_PORT", 8081))
-            logger.info(f"Starting standalone Audio Stream HTTP server on port {audio_port}...")
+            logger.info(
+                f"Starting standalone Audio Stream HTTP server on port {audio_port}..."
+            )
             await self.audio_server.start(host=host, port=audio_port)
         except Exception as e:
             logger.error(f"Failed to start standalone Audio Stream server: {e}")
