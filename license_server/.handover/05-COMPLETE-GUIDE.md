@@ -67,6 +67,8 @@ The system is composed of two completely independent parts that communicate over
 
 The **license server** only runs in one place (your VPS). Every HA add-on installation must phone home to validate. If the server is unreachable, a 24-hour **grace period** (cached token) allows continued operation.
 
+> ⚠️ **Admin-Gated Activation**: Licenses are **not self-service**. You (the admin) must pre-create a license record in the dashboard _before_ a customer can activate the add-on. This prevents unauthorized use even if someone discovers your server URL.
+
 ---
 
 ## 2. Component Overview
@@ -105,37 +107,90 @@ BASE64 ( RS256-JWT . HMAC-SHA256-checksum[0:24] )
 
 ## 3. All Available Flows (Sequence Diagrams)
 
-### 3.1 — First-Time Activation Flow
+### 3.1 — Admin Creates License + Customer Activates (Full Two-Step Flow)
 
-Triggered on **fresh add-on install**, or when `/data/license/license.enc` does not exist.
+The complete lifecycle from admin pre-approval to a running add-on.
 
 ```mermaid
 sequenceDiagram
     autonumber
+    participant Admin as You (Admin Dashboard)
+    participant LS as License Server
+    participant DB as PostgreSQL
     participant HA as Home Assistant
     participant Addon as Add-on (run.sh)
     participant LC as license_client.py
     participant HW as hw_fingerprint.py
+
+    note over Admin,DB: ── Step 1: Admin Pre-Approves ──
+    Admin->>LS: POST /api/v1/admin/licenses
+    note right of Admin: {email, purchase_code, duration_days}
+    LS->>DB: INSERT INTO licenses
+    note right of DB: status='pending'
+    note right of DB: hardware_id = NULL
+    note right of DB: token = NULL
+    DB-->>LS: OK
+    LS-->>Admin: {success: true, status: 'pending'}
+    Admin->>Admin: Share purchase_code + server URL
+    note over Admin: Sends credentials to customer
+
+    note over HA,HW: ── Step 2: Customer Activates ──
+    HA->>Addon: Install & Start add-on
+    Addon->>Addon: Read options.json
+    note right of Addon: (server_url, email, purchase_code)
+    Addon->>LC: python3 license_client.py activate
+    LC->>HW: generate_hardware_id()
+    HW-->>LC: hardware_id (SHA256), hardware_components
+    LC->>LS: POST /api/v1/activate
+    note right of LC: {email, purchase_code,
+    note right of LC:  hardware_id, hardware_components}
+    LS->>DB: SELECT * FROM licenses
+    note right of LS: WHERE hardware_id = ? → none
+    LS->>DB: SELECT * FROM licenses
+    note right of LS: WHERE email=? AND purchase_code=?
+    note right of LS: AND status='pending'
+    DB-->>LS: Pending record found ✅
+    LS->>LS: Generate RSA-4096 JWT token
+    note right of LS: + hardware checksum
+    LS->>DB: UPDATE licenses SET
+    note right of DB: hardware_id = ?, token = ?,
+    note right of DB: status = 'active'
+    DB-->>LS: OK
+    LS-->>LC: {success: true, token: "...", expires_at: "..."}
+    LC->>LC: Save token → /data/license/license.enc
+    LC-->>Addon: exit(0) — License OK
+    Addon->>Addon: Start SSL setup, then WebRTC server
+```
+
+---
+
+### 3.1b — Rejected Self-Registration Attempt
+
+What happens when someone tries to activate without admin pre-approval.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant LC as license_client.py
     participant LS as License Server
     participant DB as PostgreSQL
 
-    HA->>Addon: Install & Start add-on
-    Addon->>Addon: Read options.json (server_url, email, purchase_code)
-    Addon->>LC: python3 license_client.py activate --server ... --email ... --code ...
-    LC->>HW: generate_hardware_id()
-    HW-->>LC: hardware_id (SHA256), hardware_components (dict)
-    LC->>LS: POST /api/v1/activate\n{email, purchase_code, hardware_id, hardware_components}
-    LS->>DB: SELECT * FROM licenses WHERE hardware_id=?
-    DB-->>LS: (no rows)
-    LS->>DB: SELECT * FROM licenses WHERE email=? AND status='active'
-    DB-->>LS: (no rows)
-    LS->>LS: Generate RSA-4096 JWT token\n+ hardware checksum
-    LS->>DB: INSERT INTO licenses\n(email, purchase_code, hardware_id, token, status='active')
-    DB-->>LS: OK
-    LS-->>LC: {success: true, token: "...", expires_at: "..."}
-    LC->>LC: Save token → /data/license/license.enc\nSave state → /data/license/license_state.json
-    LC-->>Addon: exit(0) — License OK
-    Addon->>Addon: Start SSL setup, then WebRTC server
+    LC->>LS: POST /api/v1/activate
+    note right of LC: {email: "unknown@hacker.com",
+    note right of LC:  purchase_code: "GUESSED-CODE", ...}
+    LS->>DB: SELECT * FROM licenses
+    note right of LS: WHERE email=? AND purchase_code=?
+    note right of LS: AND status='pending'
+    DB-->>LS: No rows
+    LS->>DB: SELECT * FROM licenses
+    note right of LS: WHERE email=? AND purchase_code=?
+    note right of LS: AND status='active'
+    DB-->>LS: No rows
+    LS-->>LC: HTTP 403
+    note left of LS: "No pending license found for this
+    note left of LS:  email and purchase code. Contact
+    note left of LS:  your administrator first."
+    LC-->>LC: exit(1) — Activation refused
 ```
 
 ---
@@ -388,27 +443,34 @@ The dashboard shows:
 - Service health (API, DB, RSA keys)
 - Recent licenses and security incidents
 
-### Step 3: Create a Test License Record
+### Step 3: Pre-Create a Test License (Admin Step — Required)
 
-You don't pre-create a license. Instead, the **add-on activates itself** on first run. However, for testing you can manually insert a test entry:
+You **must** create a license record on the server before the add-on can activate. This is the new admin-gated model.
+
+**Option A — Via the Dashboard (recommended):**
+
+1. Open `http://localhost:8000/`
+2. Click **+ Create License** (top right of the Licenses or Overview page)
+3. Enter:
+   - **Email**: `test@example.com`
+   - **Purchase Code**: `MY-TEST-CODE-001`
+   - **Duration**: `365` (days)
+4. Click **Create License** → status shows as **pending** (amber badge)
+
+**Option B — Via curl:**
 
 ```bash
-# Method A: Simulate activation via API (recommended)
-curl -X POST http://localhost:8000/api/v1/activate \
+curl -X POST http://localhost:8000/api/v1/admin/licenses \
   -H "Content-Type: application/json" \
   -d '{
     "email": "test@example.com",
     "purchase_code": "MY-TEST-CODE-001",
-    "hardware_id": "0000000000000000000000000000000000000000000000000000000000000064",
-    "hardware_components": {
-      "machine_id": "test-machine-id",
-      "mac": "00:11:22:33:44:55",
-      "hostname": "test-host"
-    }
+    "duration_days": 365
   }'
+# Expected: {"success": true, "status": "pending", ...}
 ```
 
-> **Note**: `hardware_id` must be a 64-character hex string (SHA256).
+> The license sits as `pending` with no hardware ID until the add-on first connects.
 
 ### Step 4: Install the Add-on on HA VM
 
@@ -574,14 +636,30 @@ https://license.yourdomain.com/   (production)
 | **Validation Logs**    | Full history of every validate call with IP, geo, result                             |
 | **Tools**              | License lookup by purchase code, health check, manual token validate, RSA public key |
 
-### Workflow: Activating a New Customer
+### Workflow: Creating a License for a New Customer
 
-> Licenses are **not pre-created**. The add-on activates itself on first run. Your job is to give the customer a `purchase_code` and the server URL.
+> ⚠️ **Admin-Gated**: You control who gets a license. The add-on **cannot self-register**. Any attempt from an unknown email+purchase_code pair is rejected with HTTP 403.
 
-1. Customer receives: `email`, `purchase_code`, `license_server_url`
-2. Customer installs the HA add-on and enters these in the config
-3. On first start, the add-on calls `/api/v1/activate` automatically
-4. You can see the new license appear in the **Licenses** page of the dashboard
+**Step 1 — Create the license record (admin):**
+
+1. Open the dashboard → **Licenses** → click **+ Create License**
+2. Enter the customer's **email** and a unique **purchase_code** you've assigned to them (e.g., from your payment/order system)
+3. Set **duration** in days (default 365)
+4. Click **Create License** → license appears with **pending** (amber) status
+
+**Step 2 — Give the customer their credentials:**
+
+Send the customer:
+
+- `license_server_url` — your server URL
+- `license_email` — the email you entered
+- `purchase_code` — the code you entered
+
+**Step 3 — Customer installs and configures the add-on:**
+
+- On first start, the add-on calls `/api/v1/activate` with these credentials
+- The server finds the `pending` record, binds the hardware ID, issues a token
+- Status changes to **active** (green) — visible in the dashboard immediately
 
 ### Workflow: Suspending a License
 
@@ -610,13 +688,15 @@ docker-compose exec db psql -U license_user -d webrtc_licenses \
 
 ### Workflow: Resetting a License for a New Device
 
-If a customer gets a new machine:
+If a customer gets a new machine, reset the license back to `pending` so the new device can bind its hardware:
 
 ```bash
-# Remove the old record — let them re-activate on the new machine
+# Reset to pending — keeps the record, clears hardware binding
 docker-compose exec db psql -U license_user -d webrtc_licenses \
-  -c "DELETE FROM licenses WHERE purchase_code='THEIR-CODE';"
+  -c "UPDATE licenses SET status='pending', hardware_id=NULL, token=NULL, hardware_components=NULL, activation_count=0 WHERE purchase_code='THEIR-CODE';"
 ```
+
+The customer restarts the add-on and it binds the new device's hardware automatically.
 
 ---
 
@@ -646,14 +726,15 @@ flowchart TD
     H -- No --> E2[exit 1 — No license]
     H -- Yes, within 24h --> I[Grace period — continue]
     G -- Yes --> J[Send activation request]
-    J --> K{Already activated\non this hardware?}
-    K -- Yes --> L[Load cached token]
-    K -- No --> M[New activation — server issues token]
+    J --> K{Pending record exists\nfor email+purchase_code?}
+    K -- No → 403 --> E3[exit 1 — Not pre-approved by admin]
+    K -- Yes, already active → 409 --> L[Load cached token]
+    K -- Yes, pending → 200 --> M[Bind hardware — server issues token]
     L --> N[Validate token]
     M --> N
     I --> O[Start SSL setup]
     N -- Valid --> O
-    N -- Invalid --> E3[exit 1 — Invalid license]
+    N -- Invalid --> E4[exit 1 — Invalid license]
     O --> P[Start WebRTC server]
     P --> Q[Spawn background\nlicense validation loop]
     Q --> R[🟢 Add-on running]
@@ -671,7 +752,7 @@ flowchart TD
 
 This walks through every scenario manually.
 
-### A. Fresh Activation Test
+### A. Fresh Activation Test (Admin-Gated)
 
 ```bash
 # On your host machine (where license server runs)
@@ -681,10 +762,29 @@ docker-compose up -d
 curl http://localhost:8000/health
 ```
 
+**Step 1 — Admin creates pending license:**
+
+```bash
+curl -X POST http://localhost:8000/api/v1/admin/licenses \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","purchase_code":"MY-TEST-CODE-001","duration_days":365}'
+# Expected: {"success": true, "status": "pending"}
+```
+
+**Step 2 — Verify it's pending in the DB:**
+
+```bash
+docker-compose exec db psql -U license_user -d webrtc_licenses \
+  -c "SELECT user_email, status, hardware_id FROM licenses;"
+# Should show 1 row with status='pending' and hardware_id=NULL
+```
+
+**Step 3 — Install and start the add-on in HA:**
+
 In HA:
 
 1. Install add-on from custom repository
-2. Set `license_server_url: "http://HOST_IP:8000"`, `license_email`, `purchase_code`
+2. Set `license_server_url: "http://HOST_IP:8000"`, `license_email: test@example.com`, `purchase_code: MY-TEST-CODE-001`
 3. Click Start
 4. **Expected logs:**
 
@@ -695,12 +795,32 @@ In HA:
    [INFO] ✅ License validated successfully.
    ```
 
-5. **Verify in DB:**
+**Step 4 — Verify it's now active:**
 
 ```bash
 docker-compose exec db psql -U license_user -d webrtc_licenses \
   -c "SELECT user_email, status, hardware_id FROM licenses;"
-# Should show 1 row with status='active'
+# Should show status='active' and hardware_id populated
+```
+
+---
+
+### A2. Unauthorized Activation Attempt Test
+
+Verify that self-registration is blocked:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/activate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "hacker@unknown.com",
+    "purchase_code": "FAKE-CODE",
+    "hardware_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "hardware_components": {"hostname": "evil-machine"}
+  }'
+# Expected: HTTP 403
+# {"detail": "No pending license found for this email and purchase code.
+#             Contact your administrator to have a license created first."}
 ```
 
 ---
@@ -773,6 +893,23 @@ To **reset**:
 docker-compose exec db psql -U license_user -d webrtc_licenses \
   -c "UPDATE licenses SET expires_at=NOW() + INTERVAL '365 days', status='active' WHERE user_email='test@example.com';"
 ```
+
+---
+
+### F. Device Reset Test (New Machine)
+
+Simulates a customer replacing their HA hardware:
+
+```bash
+# Reset license back to pending (hardware unbound)
+docker-compose exec db psql -U license_user -d webrtc_licenses \
+  -c "UPDATE licenses SET status='pending', hardware_id=NULL, token=NULL,
+      hardware_components=NULL, activation_count=0
+      WHERE user_email='test@example.com';"
+```
+
+- Old add-on will fail to validate (token no longer exists in DB)
+- New device installs add-on with same email+purchase_code → activates against the reset pending record
 
 ---
 
@@ -901,21 +1038,48 @@ If someone copies the cache files to another machine, the hardware fingerprint c
 
 ### Admin Endpoints (No Auth — Protect with Nginx or firewall in production)
 
-| Method | Path                      | Description                          |
-| ------ | ------------------------- | ------------------------------------ |
-| `GET`  | `/api/v1/admin/licenses`  | All licenses (sorted newest first)   |
-| `GET`  | `/api/v1/admin/sessions`  | Active sessions (last 30 min)        |
-| `GET`  | `/api/v1/admin/incidents` | Security incidents (most recent 100) |
-| `GET`  | `/api/v1/admin/logs`      | Validation logs (most recent 200)    |
+| Method | Path                      | Description                                    |
+| ------ | ------------------------- | ---------------------------------------------- |
+| `POST` | `/api/v1/admin/licenses`  | **Pre-create a pending license** (admin-gated) |
+| `GET`  | `/api/v1/admin/licenses`  | All licenses (sorted newest first)             |
+| `GET`  | `/api/v1/admin/sessions`  | Active sessions (last 30 min)                  |
+| `GET`  | `/api/v1/admin/incidents` | Security incidents (most recent 100)           |
+| `GET`  | `/api/v1/admin/logs`      | Validation logs (most recent 200)              |
 
 ### Request / Response Examples
 
-#### POST `/api/v1/activate`
+#### POST `/api/v1/admin/licenses` — Admin Pre-Create
 
 ```json
-// Request
+// Request (admin only)
 {
-  "email": "user@example.com",
+  "email": "customer@example.com",
+  "purchase_code": "ABC-123-XYZ",
+  "duration_days": 365
+}
+
+// Success Response (201)
+{
+  "success": true,
+  "message": "License created. Customer can now activate on their device.",
+  "email": "customer@example.com",
+  "purchase_code": "ABC-123-XYZ",
+  "expires_at": "2027-03-16T17:04:34.789255",
+  "status": "pending"
+}
+
+// Conflict (409) — email or purchase_code already exists
+{
+  "detail": "A license already exists for that email or purchase code (status: active)"
+}
+```
+
+#### POST `/api/v1/activate` — Device Binds Hardware
+
+```json
+// Request (called by the add-on automatically)
+{
+  "email": "customer@example.com",
   "purchase_code": "ABC-123-XYZ",
   "hardware_id": "0a175f30fad805e964ab0c4a...",  // 64 hex chars
   "hardware_components": {
@@ -925,7 +1089,7 @@ If someone copies the cache files to another machine, the hardware fingerprint c
   }
 }
 
-// Success Response (201)
+// Success Response (200) — pending record found and bound
 {
   "success": true,
   "token": "eyJ0eXAiOiJK...",  // base64-encoded JWT+checksum
@@ -933,9 +1097,14 @@ If someone copies the cache files to another machine, the hardware fingerprint c
   "message": "License activated successfully"
 }
 
-// Already activated (409)
+// Rejected — no pre-approved record (403)
 {
-  "detail": "This hardware is already activated for user@example.com"
+  "detail": "No pending license found for this email and purchase code. Contact your administrator to have a license created first."
+}
+
+// Already activated on this device (409)
+{
+  "detail": "This hardware is already activated for customer@example.com"
 }
 ```
 
@@ -1001,4 +1170,4 @@ If someone copies the cache files to another machine, the hardware fingerprint c
 
 ---
 
-_Document generated: 2026-03-16 | Version: 1.2.1_
+_Document generated: 2026-03-16 | Version: 1.2.1 | Updated to reflect admin-gated activation model_
