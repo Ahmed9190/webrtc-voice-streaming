@@ -11,15 +11,24 @@ ARG BUILD_FROM=alpine:latest
 FROM $BUILD_FROM
 
 # Install dependencies
+# Copy requirements
+COPY requirements.txt .
+
+# Install runtime dependencies and build dependencies
 RUN apk update && \
-    apk add --no-cache python3 py3-pip curl openssl jq netcat-openbsd bash
+    apk add --no-cache python3 py3-pip curl openssl jq netcat-openbsd bash ffmpeg && \
+    apk add --no-cache --virtual .build-deps \
+        build-base \
+        python3-dev \
+        libffi-dev \
+        openssl-dev \
+        ffmpeg-dev \
+        pkgconfig && \
+    pip install --no-cache-dir --break-system-packages -r requirements.txt && \
+    apk del .build-deps
 
 # Set working directory to /app
 WORKDIR /app
-
-# Copy requirements and install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
 
 # Copy application files (Python scripts and root files)
 COPY *.py ./

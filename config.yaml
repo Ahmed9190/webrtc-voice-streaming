@@ -34,6 +34,6 @@ options:
 schema:
   log_level: list(trace|debug|info|warning|error)
   audio_port: port
-  license_server_url: url
-  license_email: email
-  purchase_code: str
+  license_server_url: "str?"
+  license_email: "str?"
+  purchase_code: "str?"
