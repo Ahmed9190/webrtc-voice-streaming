@@ -23,9 +23,12 @@ RUN apk update && \
         libffi-dev \
         openssl-dev \
         ffmpeg-dev \
-        pkgconfig && \
+        pkgconfig \
+        rust \
+        cargo && \
     pip install --no-cache-dir --break-system-packages -r requirements.txt && \
-    apk del .build-deps
+    apk del .build-deps && \
+    rm -rf /var/cache/apk/*
 
 # Set working directory to /app
 WORKDIR /app
