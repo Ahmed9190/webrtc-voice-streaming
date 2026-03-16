@@ -501,22 +501,34 @@
 
       /* ── Form ── */
       .form-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
       }
       .form-group {
         display: flex;
         flex-direction: column;
-        gap: 6px;
+        gap: 8px;
+        min-width: 0;
       }
-      .form-group.full {
-        grid-column: 1/-1;
+      .input-group {
+        display: flex;
+        gap: 8px;
+        align-items: stretch;
+        min-width: 0;
+      }
+      .input-group input {
+        flex: 1;
+        min-width: 0;
+      }
+      .input-group .btn {
+        flex-shrink: 0;
       }
       label {
-        font-size: 12px;
+        font-size: 13px;
         color: var(--text-muted);
-        font-weight: 500;
+        font-weight: 600;
+        letter-spacing: 0.2px;
       }
       input,
       select,
@@ -815,16 +827,14 @@
             <label>Customer Email *</label>
             <input id="act-email" type="email" placeholder="customer@example.com" />
           </div>
-          <div class="form-group full">
+          <div class="form-group">
             <label>Purchase Code *</label>
-            <div style="display: flex; gap: 8px; align-items: center; min-width: 0">
-              <input id="act-code" type="text" placeholder="ABCD-1234-EFGH" style="flex: 1; min-width: 0" />
-              <button class="btn btn-ghost btn-sm" type="button" onclick="generatePurchaseCode()" title="Generate random code" style="flex-shrink: 0">
-                Generate
-              </button>
+            <div class="input-group">
+              <input id="act-code" type="text" placeholder="ABCD-1234-EFGH" />
+              <button class="btn btn-ghost" type="button" onclick="generatePurchaseCode()" title="Generate random code">Generate</button>
             </div>
           </div>
-          <div class="form-group full">
+          <div class="form-group">
             <label>Duration (days) — default 365</label>
             <input id="act-days" type="number" placeholder="365" value="365" min="1" />
           </div>
