@@ -579,6 +579,13 @@ class VoiceStreamingServer:
             f"✅ Server successfully started on {protocol}://{host}:{active_port}"
         )
 
+        try:
+            audio_port = int(os.environ.get("AUDIO_PORT", 8081))
+            logger.info(f"Starting standalone Audio Stream HTTP server on port {audio_port}...")
+            await self.audio_server.start(host=host, port=audio_port)
+        except Exception as e:
+            logger.error(f"Failed to start standalone Audio Stream server: {e}")
+
         while True:
             await asyncio.sleep(3600)
 

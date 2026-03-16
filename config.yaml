@@ -27,5 +27,7 @@ ingress_port: 8099
 panel_icon: mdi:microphone
 options:
   log_level: info
+  audio_port: 8081
 schema:
   log_level: list(trace|debug|info|warning|error)
+  audio_port: port

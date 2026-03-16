@@ -46,19 +46,19 @@
 
 **Ports to Open:**
 
-- `8080/tcp` - WebSocket signaling + WebRTC
-- `8081/tcp` - HTTP audio streaming
+- `8080/tcp` (or custom `$VOICE_SERVER_PORT`) - WebSocket signaling + WebRTC
+- `8081/tcp` (or custom `$AUDIO_PORT`) - HTTP audio streaming
 
 **Firewall Rules:**
 
 ```bash
 # Ubuntu/Debian (ufw)
-sudo ufw allow 8080/tcp
-sudo ufw allow 8081/tcp
+sudo ufw allow ${VOICE_SERVER_PORT:-8080}/tcp
+sudo ufw allow ${AUDIO_PORT:-8081}/tcp
 
 # CentOS/RHEL (firewalld)
-sudo firewall-cmd --permanent --add-port=8080/tcp
-sudo firewall-cmd --permanent --add-port=8081/tcp
+sudo firewall-cmd --permanent --add-port=${VOICE_SERVER_PORT:-8080}/tcp
+sudo firewall-cmd --permanent --add-port=${AUDIO_PORT:-8081}/tcp
 sudo firewall-cmd --reload
 ```
 
@@ -202,8 +202,8 @@ docker build -t webrtc-voice-backend:latest .
 ```bash
 docker run -d \
   --name voice-streaming \
-  -p 8080:8080 \
-  -p 8081:8081 \
+  -p ${VOICE_SERVER_PORT:-8080}:8080 \
+  -p ${AUDIO_PORT:-8081}:8081 \
   webrtc-voice-backend:latest
 ```
 
@@ -212,8 +212,8 @@ docker run -d \
 ```bash
 docker run -d \
   --name voice-streaming \
-  -p 8080:8080 \
-  -p 8081:8081 \
+  -p ${VOICE_SERVER_PORT:-8080}:8080 \
+  -p ${AUDIO_PORT:-8081}:8081 \
   -v $(pwd)/config.json:/app/config.json:ro \
   webrtc-voice-backend:latest
 ```
@@ -223,8 +223,8 @@ docker run -d \
 ```bash
 docker run -d \
   --name voice-streaming \
-  -p 8080:8080 \
-  -p 8081:8081 \
+  -p ${VOICE_SERVER_PORT:-8080}:8080 \
+  -p ${AUDIO_PORT:-8081}:8081 \
   --log-driver json-file \
   --log-opt max-size=10m \
   --log-opt max-file=3 \
@@ -256,8 +256,8 @@ services:
     build: .
     container_name: voice-streaming
     ports:
-      - "8080:8080"
-      - "8081:8081"
+      - "${VOICE_SERVER_PORT:-8080}:8080"
+      - "${AUDIO_PORT:-8081}:8081"
     volumes:
       - ./config.json:/app/config.json:ro
     restart: unless-stopped
@@ -366,6 +366,7 @@ You can override configuration with environment variables:
 ```bash
 # Server settings
 export VOICE_SERVER_PORT=8080
+export AUDIO_PORT=8081
 export VOICE_SERVER_HOST=0.0.0.0
 
 # Audio settings
@@ -482,15 +483,18 @@ OSError: [Errno 98] Address already in use
 **Solution:**
 
 ```bash
-# Find process using port 8080
+# Find process using port 8080 or port 8081
 sudo lsof -i :8080
+sudo lsof -i :8081
 # OR
 sudo netstat -tulpn | grep 8080
 
 # Kill the process
 sudo kill -9 <PID>
 
-# Or change port in config.json
+# Or change ports via environment variables:
+# export VOICE_SERVER_PORT=9090
+# export AUDIO_PORT=9091
 ```
 
 ---
@@ -679,7 +683,7 @@ python test_ws.py
 
 # Docker
 docker build -t webrtc-voice-backend .
-docker run -d -p 8080:8080 -p 8081:8081 --name voice-streaming webrtc-voice-backend
+docker run -d -p ${VOICE_SERVER_PORT:-8080}:8080 -p ${AUDIO_PORT:-8081}:8081 --name voice-streaming webrtc-voice-backend
 docker logs -f voice-streaming
 docker stop voice-streaming
 docker rm voice-streaming

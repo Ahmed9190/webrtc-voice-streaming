@@ -1,6 +1,7 @@
 import asyncio
 import fractions
 import logging
+import os
 
 import av
 from aiohttp import web
@@ -121,7 +122,9 @@ class AudioStreamServer:
         request.match_info["stream_id"] = stream_id
         return await self.stream_handler(request)
 
-    async def start(self, host="0.0.0.0", port=8081, ssl_context=None):
+    async def start(self, host="0.0.0.0", port=None, ssl_context=None):
+        if port is None:
+            port = int(os.environ.get("AUDIO_PORT", 8081))
         self.runner = web.AppRunner(self.app)
         await self.runner.setup()
         self.site = web.TCPSite(self.runner, host, port, ssl_context=ssl_context)
