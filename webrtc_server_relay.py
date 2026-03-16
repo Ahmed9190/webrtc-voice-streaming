@@ -11,6 +11,7 @@ from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription
 from aiortc.contrib.media import MediaRelay
 
 from audio_stream_server import AudioStreamServer
+from udp_streamer import UDPAudioStreamer
 
 logger = logging.getLogger(__name__)
 

@@ -1,3 +1,12 @@
+# Stage 1: Build the frontend
+FROM node:20-alpine AS frontend-builder
+WORKDIR /app
+COPY frontend/package*.json ./frontend/
+RUN cd frontend && npm install
+COPY frontend/ ./frontend/
+RUN cd frontend && npm run build
+
+# Stage 2: Final image
 ARG BUILD_FROM=alpine:latest
 FROM $BUILD_FROM
 
@@ -12,8 +21,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
 
-# Copy application files
-COPY . .
+# Copy application files (Python scripts and root files)
+COPY *.py ./
+COPY *.yaml ./
+
+# Copy only the built frontend from builder stage
+COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
 
 # Copy scripts to root
 COPY ssl-setup.sh /
