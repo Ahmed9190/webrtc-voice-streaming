@@ -25,7 +25,10 @@ RUN apk update && \
         ffmpeg-dev \
         pkgconfig \
         rust \
-        cargo && \
+        cargo \
+        musl-dev \
+        linux-headers \
+        cmake && \
     pip install --no-cache-dir --break-system-packages -r requirements.txt && \
     apk del .build-deps && \
     rm -rf /var/cache/apk/*
