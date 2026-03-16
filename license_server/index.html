@@ -621,7 +621,10 @@
           </div>
           <div class="form-group">
             <label>Purchase Code *</label>
-            <input id="act-code" type="text" placeholder="ABC-123-XYZ" />
+            <div style="display: flex; gap: 8px; align-items: center">
+              <input id="act-code" type="text" placeholder="ABC-123-XYZ" style="flex: 1" />
+              <button class="btn btn-ghost btn-sm" type="button" onclick="generatePurchaseCode()" title="Generate random code">⚡ Generate</button>
+            </div>
           </div>
           <div class="form-group full">
             <label>Duration (days) — default 365</label>
@@ -754,7 +757,7 @@
           <div class="card">
             <div class="card-header">
               <h3>🔑 Recent Licenses</h3>
-              <button class="btn btn-primary btn-sm" onclick="openModal('modal-activate')">+ Activate</button>
+              <button class="btn btn-primary btn-sm" onclick="openModal('modal-activate')">+ Create License</button>
             </div>
             <div class="table-wrap">
               <table>
@@ -792,11 +795,12 @@
             <select id="license-filter" onchange="filterLicenses()" style="width: 140px">
               <option value="">All statuses</option>
               <option value="active">Active</option>
+              <option value="pending">Pending</option>
               <option value="suspended">Suspended</option>
               <option value="revoked">Revoked</option>
               <option value="expired">Expired</option>
             </select>
-            <button class="btn btn-primary" onclick="openModal('modal-activate')">+ Activate</button>
+            <button class="btn btn-primary" onclick="openModal('modal-activate')">+ Create License</button>
             <button class="btn btn-ghost" onclick="loadLicenses()">↻</button>
           </div>
 
@@ -1174,20 +1178,37 @@
           return;
         }
         tbody.innerHTML = data
-          .map(
-            (l) => `
+          .map((l) => {
+            const code = encodeURIComponent(l.purchase_code);
+            const rawCode = (l.purchase_code || "").replace(/'/g, "\\'");
+            // Build contextual action button
+            let actionBtn = "";
+            if (l.status === "active") {
+              actionBtn = `<button class="btn btn-ghost btn-sm" style="color:var(--warning)" onclick="licenseAction('${rawCode}','suspend')">⏸ Suspend</button>`;
+            } else if (l.status === "suspended") {
+              actionBtn = `<button class="btn btn-ghost btn-sm" style="color:var(--success)" onclick="licenseAction('${rawCode}','reinstate')">▶ Reinstate</button>`;
+            } else if (l.status === "pending") {
+              actionBtn = `<button class="btn btn-ghost btn-sm" style="color:var(--muted)" onclick="licenseAction('${rawCode}','revoke')">🚫 Revoke</button>`;
+            } else {
+              actionBtn = `<button class="btn btn-ghost btn-sm" style="color:var(--success)" onclick="licenseAction('${rawCode}','reinstate')">↩ Reinstate</button>`;
+            }
+            return `
     <tr>
       <td>${l.user_email || "—"}</td>
       <td><code style="font-size:11px;">${l.purchase_code || "—"}</code></td>
       <td><span class="badge badge-${l.status}">${l.status}</span></td>
-      <td style="font-family:monospace;font-size:11px;" title="${l.hardware_id}">${truncate(l.hardware_id, 20)}</td>
+      <td style="font-family:monospace;font-size:11px;" title="${l.hardware_id || ""}">${truncate(l.hardware_id, 20)}</td>
       <td>${l.warning_count ?? 0}</td>
       <td style="font-size:11px;color:var(--muted);">${formatDate(l.created_at)}</td>
-      <td>
-        <button class="btn btn-ghost btn-sm" onclick="lookupByCode('${l.purchase_code}')">Details</button>
+      <td style="white-space:nowrap;">
+        <div style="display:flex;gap:4px;flex-wrap:wrap;">
+          ${actionBtn}
+          ${l.hardware_id ? `<button class="btn btn-ghost btn-sm" style="color:var(--muted)" onclick="licenseAction('${rawCode}','reset')" title="Unbind hardware — resets to pending">🔄 Reset</button>` : ""}
+          <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="licenseDelete('${rawCode}')">🗑 Delete</button>
+        </div>
       </td>
-    </tr>`,
-          )
+    </tr>`;
+          })
           .join("");
       }
 
@@ -1203,6 +1224,12 @@
       }
 
       /* ─── Create License (Admin) ─── */
+      function generatePurchaseCode() {
+        const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/I/1 for clarity
+        const seg = (n) => Array.from({ length: n }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+        document.getElementById("act-code").value = `${seg(4)}-${seg(4)}-${seg(4)}`;
+      }
+
       async function createLicense() {
         const email = document.getElementById("act-email").value.trim();
         const code = document.getElementById("act-code").value.trim();
@@ -1230,6 +1257,40 @@
         }
       }
 
+      /* ─── License Actions (suspend / reinstate / revoke / reset) ─── */
+      async function licenseAction(purchaseCode, action) {
+        const labels = { suspend: "Suspend", reinstate: "Reinstate", revoke: "Revoke", reset: "Reset hardware binding for" };
+        const label = labels[action] || action;
+        if (!confirm(`${label} license "${purchaseCode}"?`)) return;
+
+        const data = await api(`/api/v1/admin/licenses/${encodeURIComponent(purchaseCode)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ action }),
+        });
+
+        if (data.success) {
+          toast(`License ${action}d → now: ${data.new_status}`, "success");
+          loadLicenses();
+        } else {
+          toast(data.detail || `Action '${action}' failed.`, "error");
+        }
+      }
+
+      /* ─── License Delete ─── */
+      async function licenseDelete(purchaseCode) {
+        if (!confirm(`⚠️ Permanently delete license "${purchaseCode}" and ALL its logs, sessions and incidents?\n\nThis cannot be undone.`)) return;
+
+        const data = await api(`/api/v1/admin/licenses/${encodeURIComponent(purchaseCode)}`, {
+          method: "DELETE",
+        });
+
+        if (data.success) {
+          toast(`License ${purchaseCode} deleted.`, "success");
+          loadLicenses();
+        } else {
+          toast(data.detail || "Delete failed.", "error");
+        }
+      }
       function copyToken() {
         navigator.clipboard.writeText(document.getElementById("modal-token-content").textContent);
         toast("Token copied to clipboard!", "success");

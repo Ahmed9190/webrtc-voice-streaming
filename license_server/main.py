@@ -521,6 +521,70 @@ async def get_admin_logs(db: Session = Depends(get_db)):
     } for l in logs]
 
 
+class AdminPatchLicenseRequest(BaseModel):
+    action: str  # "suspend" | "reinstate" | "revoke" | "reset"
+    reason: Optional[str] = None
+
+
+@app.patch("/api/v1/admin/licenses/{purchase_code}")
+async def admin_patch_license(
+    purchase_code: str, request: AdminPatchLicenseRequest, db: Session = Depends(get_db)
+):
+    """Admin: change license status — suspend, reinstate, revoke, or reset to pending."""
+    license = (
+        db.query(License).filter(License.purchase_code == purchase_code).first()
+    )
+    if not license:
+        raise HTTPException(404, detail="License not found")
+
+    action = request.action.lower()
+    if action == "suspend":
+        license.status = "suspended"
+        license.suspension_reason = request.reason or "Suspended by admin"
+    elif action == "reinstate":
+        license.status = "active"
+        license.suspension_reason = None
+        license.warning_count = 0
+    elif action == "revoke":
+        license.status = "revoked"
+        license.suspension_reason = request.reason or "Revoked by admin"
+    elif action == "reset":
+        # Reset back to pending so the customer can bind a new device
+        license.status = "pending"
+        license.hardware_id = None
+        license.hardware_components = None
+        license.token = None
+        license.activation_count = 0
+        license.suspension_reason = None
+        license.warning_count = 0
+    else:
+        raise HTTPException(400, detail=f"Unknown action '{action}'. Use: suspend|reinstate|revoke|reset")
+
+    db.commit()
+    logger.info(f"Admin action '{action}' on license {purchase_code}")
+    return {"success": True, "purchase_code": purchase_code, "new_status": license.status}
+
+
+@app.delete("/api/v1/admin/licenses/{purchase_code}", status_code=200)
+async def admin_delete_license(purchase_code: str, db: Session = Depends(get_db)):
+    """Admin: permanently delete a license and all associated records."""
+    license = (
+        db.query(License).filter(License.purchase_code == purchase_code).first()
+    )
+    if not license:
+        raise HTTPException(404, detail="License not found")
+
+    # Cascade-delete related records
+    db.query(ValidationLog).filter(ValidationLog.license_id == license.id).delete()
+    db.query(SecurityIncident).filter(SecurityIncident.license_id == license.id).delete()
+    db.query(SessionState).filter(SessionState.license_id == license.id).delete()
+    db.delete(license)
+    db.commit()
+
+    logger.info(f"Admin deleted license {purchase_code}")
+    return {"success": True, "message": f"License {purchase_code} and all associated data deleted"}
+
+
 @app.get("/health")
 async def health_check():
     try:
