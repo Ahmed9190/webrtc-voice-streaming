@@ -149,12 +149,8 @@ export class WebRTCManager extends EventTarget {
     } as any);
 
     this.peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        this.sendWebSocketMessage({
-          type: "ice_candidate",
-          candidate: event.candidate,
-        });
-      }
+      // ICE candidates are handled via SDP exchange (aiortc default behavior)
+      // No need to send separate candidate messages
     };
 
     this.peerConnection.oniceconnectionstatechange = () => {

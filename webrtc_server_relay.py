@@ -11,7 +11,6 @@ from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription
 from aiortc.contrib.media import MediaRelay
 
 from audio_stream_server import AudioStreamServer
-from udp_streamer import UDPAudioStreamer
 
 logger = logging.getLogger(__name__)
 
@@ -150,15 +149,11 @@ class VoiceStreamingServer:
             await self.handle_webrtc_offer(connection_id, data)
         elif message_type == "webrtc_answer":
             await self.handle_webrtc_answer(connection_id, data)
-        elif message_type == "ice_candidate":
-            await self.handle_ice_candidate(connection_id, data)
         elif message_type == "get_available_streams":
             await self.send_available_streams(connection_id)
         elif message_type == "stop_stream":
             # Just stop media, keep WS open
             await self.stop_media(connection_id)
-        elif message_type == "local_ip":
-            await self.handle_local_ip(connection_id, data)
 
     async def stop_media(self, connection_id: str):
         connection = self.connections.get(connection_id)
@@ -398,13 +393,6 @@ class VoiceStreamingServer:
             logger.info(f"Set remote description (answer) for {connection_id}")
         except Exception as e:
             logger.error(f"Error handling answer from {connection_id}: {e}")
-
-    async def handle_ice_candidate(self, connection_id: str, data: dict):
-        # aiortc handles ICE candidates via SDP usually, but logging is good
-        pass
-
-    async def handle_local_ip(self, connection_id: str, data: dict):
-        pass
 
     async def cleanup_connection(self, connection_id: str):
         if connection_id in self.connections:

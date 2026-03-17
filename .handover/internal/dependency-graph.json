@@ -1,0 +1,203 @@
+{
+  "project": "webrtc-voice-streaming",
+  "generated_at": "2026-03-17T10:35:00Z",
+  "version": "1.1.6",
+  "modules": {
+    "backend": {
+      "webrtc_server_relay.py": {
+        "type": "python",
+        "lines": 350,
+        "dependencies": [
+          "aiohttp",
+          "aiortc",
+          "audio_stream_server",
+          "udp_streamer"
+        ],
+        "responsibility": "Main signaling server",
+        "complexity": "high",
+        "test_coverage": 0
+      },
+      "audio_stream_server.py": {
+        "type": "python",
+        "lines": 150,
+        "dependencies": [
+          "aiohttp",
+          "av"
+        ],
+        "responsibility": "MP3 HTTP streaming",
+        "complexity": "medium",
+        "test_coverage": 0
+      },
+      "udp_streamer.py": {
+        "type": "python",
+        "lines": 60,
+        "dependencies": [
+          "av",
+          "socket"
+        ],
+        "responsibility": "Raw PCM over UDP",
+        "complexity": "low",
+        "test_coverage": 0
+      },
+      "register_frontend.py": {
+        "type": "python",
+        "lines": 80,
+        "dependencies": [
+          "aiohttp",
+          "asyncio"
+        ],
+        "responsibility": "Lovelace resource registration",
+        "complexity": "low",
+        "test_coverage": 0
+      }
+    },
+    "frontend": {
+      "voice-streaming-card-dashboard.ts": {
+        "type": "typescript",
+        "lines": 10,
+        "dependencies": [
+          "voice-sending-card",
+          "voice-receiving-card"
+        ],
+        "responsibility": "Module entry point",
+        "complexity": "low",
+        "test_coverage": 0
+      },
+      "webrtc-manager.ts": {
+        "type": "typescript",
+        "lines": 280,
+        "dependencies": [
+          "lit"
+        ],
+        "responsibility": "WebRTC state machine",
+        "complexity": "high",
+        "test_coverage": 0
+      },
+      "voice-sending-card.ts": {
+        "type": "typescript",
+        "lines": 200,
+        "dependencies": [
+          "lit",
+          "webrtc-manager",
+          "styles"
+        ],
+        "responsibility": "Sender UI component",
+        "complexity": "medium",
+        "test_coverage": 0
+      },
+      "voice-receiving-card.ts": {
+        "type": "typescript",
+        "lines": 350,
+        "dependencies": [
+          "lit",
+          "webrtc-manager",
+          "styles"
+        ],
+        "responsibility": "Receiver UI component",
+        "complexity": "high",
+        "test_coverage": 0
+      }
+    },
+    "infrastructure": {
+      "ssl-setup.sh": {
+        "type": "bash",
+        "lines": 180,
+        "dependencies": [
+          "openssl",
+          "jq",
+          "curl"
+        ],
+        "responsibility": "SSL certificate management",
+        "complexity": "medium",
+        "test_coverage": "partial"
+      },
+      "run.sh": {
+        "type": "bash",
+        "lines": 80,
+        "dependencies": [
+          "ssl-setup.sh",
+          "register_frontend.py"
+        ],
+        "responsibility": "Add-on entrypoint",
+        "complexity": "low",
+        "test_coverage": 0
+      },
+      "Dockerfile": {
+        "type": "dockerfile",
+        "lines": 40,
+        "dependencies": [],
+        "responsibility": "Container build",
+        "complexity": "low",
+        "test_coverage": "n/a"
+      }
+    }
+  },
+  "dependency_graph": {
+    "nodes": [
+      {"id": "webrtc_server_relay", "type": "core"},
+      {"id": "audio_stream_server", "type": "service"},
+      {"id": "udp_streamer", "type": "service"},
+      {"id": "webrtc_manager", "type": "frontend"},
+      {"id": "voice_sending_card", "type": "frontend"},
+      {"id": "voice_receiving_card", "type": "frontend"},
+      {"id": "ssl_setup", "type": "infrastructure"},
+      {"id": "run_sh", "type": "infrastructure"}
+    ],
+    "edges": [
+      {"from": "webrtc_server_relay", "to": "audio_stream_server", "type": "imports"},
+      {"from": "webrtc_server_relay", "to": "udp_streamer", "type": "imports"},
+      {"from": "webrtc_manager", "to": "webrtc_server_relay", "type": "communicates_via", "protocol": "websocket"},
+      {"from": "voice_sending_card", "to": "webrtc_manager", "type": "uses"},
+      {"from": "voice_receiving_card", "to": "webrtc_manager", "type": "uses"},
+      {"from": "run_sh", "to": "ssl_setup", "type": "sources"},
+      {"from": "run_sh", "to": "webrtc_server_relay", "type": "executes"}
+    ]
+  },
+  "entry_points": [
+    {
+      "name": "Main Server",
+      "file": "webrtc_server_relay.py",
+      "function": "VoiceStreamingServer.run_server()",
+      "trigger": "Container start"
+    },
+    {
+      "name": "Audio Server",
+      "file": "audio_stream_server.py",
+      "function": "AudioStreamServer.start()",
+      "trigger": "Called by VoiceStreamingServer"
+    },
+    {
+      "name": "Frontend Cards",
+      "file": "voice-streaming-card-dashboard.ts",
+      "function": "Module load",
+      "trigger": "Home Assistant dashboard load"
+    },
+    {
+      "name": "SSL Setup",
+      "file": "ssl-setup.sh",
+      "function": "setup_ssl()",
+      "trigger": "run.sh sources ssl-setup.sh"
+    }
+  ],
+  "external_dependencies": {
+    "python": [
+      {"name": "aiohttp", "version": ">=3.8.6", "purpose": "Async HTTP server"},
+      {"name": "aiortc", "version": ">=1.9.0", "purpose": "WebRTC implementation"},
+      {"name": "av", "version": ">=10.0.0", "purpose": "Media encoding/decoding"},
+      {"name": "numpy", "version": ">=1.26.0", "purpose": "Numerical operations"},
+      {"name": "cryptography", "version": ">=41.0.0", "purpose": "SSL/TLS support"}
+    ],
+    "nodejs": [
+      {"name": "lit", "version": "^3.1.0", "purpose": "Web components framework"},
+      {"name": "@material/mwc-*", "version": "^0.27.0", "purpose": "Material Design components"},
+      {"name": "rollup", "version": "^4.9.0", "purpose": "Module bundler"},
+      {"name": "typescript", "version": "^5.3.3", "purpose": "TypeScript compiler"}
+    ],
+    "system": [
+      {"name": "openssl", "purpose": "Certificate generation"},
+      {"name": "jq", "purpose": "JSON processing"},
+      {"name": "curl", "purpose": "HTTP requests"},
+      {"name": "netcat", "purpose": "CA download server"}
+    ]
+  }
+}
