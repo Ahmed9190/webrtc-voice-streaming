@@ -4,6 +4,7 @@ import os
 
 import aiohttp
 
+# Configure logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
@@ -11,50 +12,20 @@ logger = logging.getLogger("register_frontend")
 
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN")
 
+# URL of the resource to register
+# Note: /local maps to /config/www in HA
 RESOURCE_URL = "/local/voice_streaming_backend/dist/voice-streaming-card-dashboard.js"
 RESOURCE_TYPE = "module"
 
+# Supervisor API endpoint for Core API proxy
 BASE_URL = "http://supervisor/core/api"
-
-
-async def check_yaml_mode(session, headers):
-    """Check if Lovelace is in YAML mode."""
-    try:
-        async with session.get(
-            f"{BASE_URL}/lovelace/config",
-            headers=headers,
-            timeout=aiohttp.ClientTimeout(total=5),
-        ) as resp:
-            if resp.status == 200:
-                config = await resp.json()
-                mode = config.get("mode", "yaml")
-                logger.info(f"Lovelace mode detected: {mode}")
-                return mode == "yaml"
-            else:
-                logger.warning(
-                    f"Could not determine Lovelace mode (status {resp.status})"
-                )
-                return False
-    except Exception as e:
-        logger.warning(f"Could not check Lovelace mode: {e}")
-        return False
 
 
 async def register():
     if not SUPERVISOR_TOKEN:
-        logger.error("SUPERVISOR_TOKEN not found in environment.")
-        logger.error("Cannot auto-register frontend resource.")
-        logger.error("")
-        logger.error("Please add this resource manually in Home Assistant:")
-        logger.error(f"  URL: {RESOURCE_URL}")
-        logger.error(f"  Type: {RESOURCE_TYPE}")
-        logger.error("")
-        logger.error("In UI mode: Settings > Dashboards > Resources > Add Resource")
-        logger.error("In YAML mode: Add to configuration.yaml:")
-        logger.error("  lovelace:")
-        logger.error("    resources:")
-        logger.error(f"      - url: {RESOURCE_URL}")
-        logger.error(f"        type: {RESOURCE_TYPE}")
+        logger.warning(
+            "SUPERVISOR_TOKEN not found. Cannot register frontend resource automatically."
+        )
         return
 
     headers = {
@@ -63,20 +34,9 @@ async def register():
     }
 
     async with aiohttp.ClientSession() as session:
-        # Check if Lovelace is in YAML mode
-        is_yaml = await check_yaml_mode(session, headers)
-        if is_yaml:
-            logger.warning(
-                "Lovelace is in YAML mode. Resources must be added manually."
-            )
-            logger.warning(f"Please add this to your configuration.yaml:")
-            logger.warning(f"  lovelace:")
-            logger.warning(f"    resources:")
-            logger.warning(f"      - url: {RESOURCE_URL}")
-            logger.warning(f"        type: {RESOURCE_TYPE}")
-            return
-
-        # Try to get existing resources
+        # 1. Get existing resources
+        # We need to handle the case where Lovelace is in YAML mode (resources might not be editable via API)
+        # But commonly in UI mode, this works.
         try:
             async with session.get(
                 f"{BASE_URL}/lovelace/resources", headers=headers
@@ -84,35 +44,21 @@ async def register():
                 if resp.status == 401:
                     logger.error("Unauthorized: Supervisor token rejected.")
                     return
-                if resp.status == 404:
-                    logger.warning(
-                        "Resources endpoint not found. Trying alternative method..."
-                    )
-                    # Try without /api prefix
-                    async with session.get(
-                        f"http://supervisor/api/lovelace/resources", headers=headers
-                    ) as alt_resp:
-                        if alt_resp.status == 200:
-                            resources = await alt_resp.json()
-                        else:
-                            logger.warning(
-                                f"Alternative method failed (status {alt_resp.status})"
-                            )
-                            return
-                elif resp.status != 200:
+                if resp.status != 200:
+                    # Could be 404 if Lovelace not set up or 405 if in YAML mode
                     text = await resp.text()
                     logger.warning(
-                        f"Could not list resources (Status {resp.status}): {text}"
+                        f"Could not list Lovelace resources (Status {resp.status}): {text}. You may need to add the resource manually."
                     )
                     return
-                else:
-                    resources = await resp.json()
+
+                resources = await resp.json()
 
         except Exception as e:
             logger.error(f"Error connecting to Home Assistant API: {e}")
             return
 
-        # Check for duplicates
+        # 2. Check for duplicates
         for res in resources:
             if res.get("url") == RESOURCE_URL:
                 logger.info(
@@ -120,7 +66,7 @@ async def register():
                 )
                 return
 
-        # Register resource
+        # 3. Register resource
         logger.info(f"Registering new Lovelace resource: {RESOURCE_URL}")
         payload = {"url": RESOURCE_URL, "type": RESOURCE_TYPE}
 

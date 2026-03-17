@@ -19,5 +19,3 @@ Thumbs.db
 tests/
 frontend/tsconfig.typecheck.json
 
-
-license_server/

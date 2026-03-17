@@ -1,5 +1,5 @@
 name: "Voice Streaming Backend"
-version: "1.2.1"
+version: "1.1.5"
 slug: "voice_streaming_backend"
 description: "WebRTC-based real-time audio streaming backend for Home Assistant voice applications"
 url: "https://github.com/Ahmed9190/webrtc-voice-streaming"
@@ -28,12 +28,6 @@ panel_icon: mdi:microphone
 options:
   log_level: info
   audio_port: 8081
-  license_server_url: ""
-  license_email: ""
-  purchase_code: ""
 schema:
   log_level: list(trace|debug|info|warning|error)
   audio_port: port
-  license_server_url: "str?"
-  license_email: "str?"
-  purchase_code: "str?"

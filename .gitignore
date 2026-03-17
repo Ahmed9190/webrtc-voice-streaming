@@ -20,9 +20,3 @@ ssl/*.backup_*
 # OS
 .DS_Store
 Thumbs.db
-
-# License Server
-# license_server
-
-# OpenCode
-opencode.jsonc
