@@ -1,36 +1,96 @@
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi import Cookie
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from pydantic import BaseModel, EmailStr, validator
 from datetime import datetime, timedelta
 import os
 import logging
+import secrets
+import asyncio
 from typing import Optional
 import httpx
+
+import bcrypt
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 from models import Base, License, ValidationLog, SecurityIncident, SessionState
 from token_generator import TokenGenerator
 from hw_fingerprint import generate_hardware_id, validate_hardware_components
-
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://license_user:license_pass@db:5432/webrtc_licenses"
-)
-SECRET_KEY = os.getenv("SECRET_KEY", os.urandom(32).hex())
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:////keys/licenses.db")
+SECRET_KEY = os.getenv("SECRET_KEY", os.urandom(32).hex())
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@example.com")
+ADMIN_PASSWORD_HASH = os.getenv("ADMIN_PASSWORD_HASH", "")
+SESSION_MAX_AGE = 86400
+
+session_serializer = URLSafeTimedSerializer(SECRET_KEY)
+
+engine = create_engine(
+    DATABASE_URL, connect_args={"check_same_thread": False}, pool_pre_ping=True
+)
 SessionLocal = sessionmaker(bind=engine)
 
 Base.metadata.create_all(engine)
 
 token_gen = TokenGenerator()
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    try:
+        return bcrypt.checkpw(
+            plain_password.encode("utf-8"), hashed_password.encode("utf-8")
+        )
+    except Exception:
+        return False
+
+
+def create_session_token(email: str) -> str:
+    return session_serializer.dumps({"email": email}, salt="session")
+
+
+def verify_session_token(token: str) -> dict:
+    try:
+        return session_serializer.loads(token, salt="session", max_age=SESSION_MAX_AGE)
+    except (BadSignature, SignatureExpired):
+        return None
+
+
+async def require_admin(session_token: str = Cookie(None, alias="admin_session")):
+    if not session_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Not authenticated. Please login.",
+        )
+
+    session_data = verify_session_token(session_token)
+    if not session_data or session_data.get("email") != ADMIN_EMAIL:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired session. Please login again.",
+        )
+
+    return session_data
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
 
 app = FastAPI(title="WebRTC License Server", version="1.0.0")
 
@@ -40,14 +100,6 @@ app.add_middleware(
     allow_methods=["POST", "GET", "OPTIONS"],
     allow_headers=["*"],
 )
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 class ActivationRequest(BaseModel):
@@ -80,6 +132,11 @@ class ValidationRequest(BaseModel):
 class HeartbeatRequest(BaseModel):
     token: str
     session_id: str
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
 
 
 async def get_ip_geolocation(ip: str):
@@ -141,12 +198,13 @@ def create_security_incident(
 @app.on_event("startup")
 async def startup_event():
     logger.info("License server starting up...")
-    Base.metadata.create_all(engine)
 
 
 @app.post("/api/v1/admin/licenses", status_code=201)
 async def admin_create_license(
-    request: AdminCreateLicenseRequest, db: Session = Depends(get_db)
+    request: AdminCreateLicenseRequest,
+    db: Session = Depends(get_db),
+    admin=Depends(require_admin),
 ):
     """Admin-only: pre-create a pending license for a customer.
     The add-on will bind its hardware on first activation."""
@@ -458,7 +516,9 @@ async def serve_dashboard():
 
 
 @app.get("/api/v1/admin/licenses")
-async def get_admin_licenses(db: Session = Depends(get_db)):
+async def get_admin_licenses(
+    db: Session = Depends(get_db), admin=Depends(require_admin)
+):
     licenses = db.query(License).order_by(License.issued_at.desc()).all()
     return [
         {
@@ -474,7 +534,9 @@ async def get_admin_licenses(db: Session = Depends(get_db)):
 
 
 @app.get("/api/v1/admin/sessions")
-async def get_admin_sessions(db: Session = Depends(get_db)):
+async def get_admin_sessions(
+    db: Session = Depends(get_db), admin=Depends(require_admin)
+):
     cutoff_time = datetime.utcnow() - timedelta(minutes=30)
     sessions = (
         db.query(SessionState, License)
@@ -496,7 +558,9 @@ async def get_admin_sessions(db: Session = Depends(get_db)):
 
 
 @app.get("/api/v1/admin/incidents")
-async def get_admin_incidents(db: Session = Depends(get_db)):
+async def get_admin_incidents(
+    db: Session = Depends(get_db), admin=Depends(require_admin)
+):
     incidents = (
         db.query(SecurityIncident, License)
         .join(License, SecurityIncident.license_id == License.id)
@@ -521,7 +585,7 @@ async def get_admin_incidents(db: Session = Depends(get_db)):
 
 
 @app.get("/api/v1/admin/logs")
-async def get_admin_logs(db: Session = Depends(get_db)):
+async def get_admin_logs(db: Session = Depends(get_db), admin=Depends(require_admin)):
     logs = (
         db.query(ValidationLog, License)
         .join(License, ValidationLog.license_id == License.id)
@@ -555,7 +619,10 @@ class AdminPatchLicenseRequest(BaseModel):
 
 @app.patch("/api/v1/admin/licenses/{purchase_code}")
 async def admin_patch_license(
-    purchase_code: str, request: AdminPatchLicenseRequest, db: Session = Depends(get_db)
+    purchase_code: str,
+    request: AdminPatchLicenseRequest,
+    db: Session = Depends(get_db),
+    admin=Depends(require_admin),
 ):
     """Admin: change license status — activate, suspend, reinstate, revoke, reset, or update."""
     license = db.query(License).filter(License.purchase_code == purchase_code).first()
@@ -638,7 +705,9 @@ async def admin_patch_license(
 
 
 @app.delete("/api/v1/admin/licenses/{purchase_code}", status_code=200)
-async def admin_delete_license(purchase_code: str, db: Session = Depends(get_db)):
+async def admin_delete_license(
+    purchase_code: str, db: Session = Depends(get_db), admin=Depends(require_admin)
+):
     """Admin: permanently delete a license and all associated records."""
     license = db.query(License).filter(License.purchase_code == purchase_code).first()
     if not license:
@@ -676,6 +745,58 @@ async def health_check():
     }
 
 
+@app.post("/api/v1/auth/login")
+async def login(request: Request, login_request: LoginRequest):
+    if login_request.email != ADMIN_EMAIL:
+        await asyncio.sleep(1)
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if not ADMIN_PASSWORD_HASH:
+        raise HTTPException(
+            status_code=500,
+            detail="Admin password not configured. Set ADMIN_PASSWORD_HASH environment variable.",
+        )
+
+    if not verify_password(login_request.password, ADMIN_PASSWORD_HASH):
+        await asyncio.sleep(1)
+        logger.warning(
+            f"Failed login attempt for {login_request.email} from {request.client.host}"
+        )
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    session_token = create_session_token(login_request.email)
+
+    response = JSONResponse(
+        {"success": True, "email": login_request.email, "message": "Login successful"}
+    )
+
+    response.set_cookie(
+        key="admin_session",
+        value=session_token,
+        max_age=SESSION_MAX_AGE,
+        httponly=True,
+        secure=ENVIRONMENT == "production",
+        samesite="lax",
+    )
+
+    logger.info(
+        f"Admin login successful: {login_request.email} from {request.client.host}"
+    )
+    return response
+
+
+@app.post("/api/v1/auth/logout")
+async def logout():
+    response = JSONResponse({"success": True, "message": "Logged out"})
+    response.delete_cookie("admin_session")
+    return response
+
+
+@app.get("/api/v1/auth/check")
+async def check_auth(admin=Depends(require_admin)):
+    return {"authenticated": True, "email": admin["email"]}
+
+
 async def update_geolocation(validation_log_id: str, ip_address: str):
     geo_data = await get_ip_geolocation(ip_address)
     if geo_data:
@@ -692,6 +813,32 @@ async def update_geolocation(validation_log_id: str, ip_address: str):
             log.longitude = geo_data.get("longitude")
             db.commit()
         db.close()
+
+
+# Serve frontend static files
+frontend_dir = os.path.join(os.path.dirname(__file__), "frontend")
+if os.path.exists(frontend_dir):
+    app.mount("/frontend", StaticFiles(directory=frontend_dir), name="frontend")
+
+    @app.get("/")
+    async def serve_dashboard():
+        index_path = os.path.join(os.path.dirname(__file__), "index.html")
+        if os.path.exists(index_path):
+            return FileResponse(index_path)
+        return {"message": "License Server API", "docs": "/docs"}
+
+    # Catch-all for SPA routing (serve index.html for non-API routes)
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        if (
+            not full_path.startswith("api/")
+            and not full_path.startswith("docs")
+            and not full_path.startswith("openapi")
+        ):
+            index_path = os.path.join(os.path.dirname(__file__), "index.html")
+            if os.path.exists(index_path):
+                return FileResponse(index_path)
+        return JSONResponse({"error": "Not found"}, status_code=404)
 
 
 if __name__ == "__main__":

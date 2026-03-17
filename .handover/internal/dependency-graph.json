@@ -1,0 +1,177 @@
+{
+  "project": "webrtc-voice-streaming",
+  "generated_at": "2026-03-17T00:30:00Z",
+  "entry_points": {
+    "main": {
+      "file": "run.sh",
+      "type": "shell",
+      "description": "Main orchestration script called by Docker CMD"
+    },
+    "docker": {
+      "file": "Dockerfile",
+      "type": "dockerfile",
+      "description": "Multi-stage Docker build"
+    },
+    "addon_manifest": {
+      "file": "config.yaml",
+      "type": "yaml",
+      "description": "Home Assistant add-on configuration"
+    }
+  },
+  "core_modules": {
+    "webrtc_server_relay": {
+      "file": "webrtc_server_relay.py",
+      "type": "python",
+      "lines": 668,
+      "dependencies": [
+        "aiohttp",
+        "aiortc",
+        "audio_stream_server",
+        "license_client"
+      ],
+      "responsibility": "WebRTC signaling, WebSocket handling, MediaRelay pub/sub"
+    },
+    "audio_stream_server": {
+      "file": "audio_stream_server.py",
+      "type": "python",
+      "lines": 200,
+      "dependencies": [
+        "aiohttp",
+        "av (PyAV)"
+      ],
+      "responsibility": "MP3 streaming server for non-WebRTC clients"
+    },
+    "license_client": {
+      "file": "license_client.py",
+      "type": "python",
+      "lines": 300,
+      "dependencies": [
+        "httpx",
+        "cryptography",
+        "hw_fingerprint"
+      ],
+      "responsibility": "External license validation and heartbeat"
+    },
+    "hw_fingerprint": {
+      "file": "hw_fingerprint.py",
+      "type": "python",
+      "lines": 80,
+      "dependencies": [],
+      "responsibility": "Hardware fingerprint generation for license binding"
+    },
+    "register_frontend": {
+      "file": "register_frontend.py",
+      "type": "python",
+      "lines": 100,
+      "dependencies": [
+        "aiohttp"
+      ],
+      "responsibility": "Auto-register Lovelace dashboard resource"
+    }
+  },
+  "infrastructure": {
+    "ssl_setup": {
+      "file": "ssl-setup.sh",
+      "type": "shell",
+      "lines": 200,
+      "responsibility": "Autonomous SSL certificate cascade"
+    },
+    "dockerfile": {
+      "file": "Dockerfile",
+      "type": "dockerfile",
+      "lines": 50,
+      "responsibility": "Multi-stage build (frontend + Python)"
+    }
+  },
+  "frontend": {
+    "package": {
+      "file": "frontend/package.json",
+      "type": "npm",
+      "responsibility": "Dashboard card components"
+    },
+    "dist": {
+      "directory": "frontend/dist",
+      "type": "static",
+      "responsibility": "Built assets copied to /config/www/"
+    }
+  },
+  "configuration": {
+    "config_yaml": {
+      "file": "config.yaml",
+      "type": "yaml",
+      "responsibility": "Home Assistant add-on manifest"
+    },
+    "requirements_txt": {
+      "file": "requirements.txt",
+      "type": "text",
+      "responsibility": "Python dependencies"
+    },
+    "env_example": {
+      "file": ".env.example",
+      "type": "env",
+      "responsibility": "Environment variable template"
+    }
+  },
+  "documentation": {
+    "readme": {
+      "file": "README.md",
+      "type": "markdown",
+      "responsibility": "User-facing installation guide"
+    },
+    "handover": {
+      "directory": ".handover",
+      "files": [
+        "00-README-FIRST.md",
+        "01-SETUP-GUIDE.md",
+        "02-ARCHITECTURE.md",
+        "03-DECISION-LOG.md",
+        "04-GOTCHAS.md",
+        "ONBOARDING-CHECKLIST.md"
+      ],
+      "responsibility": "Developer handover documentation"
+    }
+  },
+  "data_flow": {
+    "startup": [
+      "Dockerfile → run.sh",
+      "run.sh → ssl-setup.sh",
+      "run.sh → license_client.py",
+      "run.sh → register_frontend.py",
+      "run.sh → webrtc_server_relay.py"
+    ],
+    "runtime": [
+      "Client WebSocket → webrtc_server_relay.py",
+      "webrtc_server_relay.py → MediaRelay",
+      "MediaRelay → audio_stream_server.py",
+      "license_client.py → External license server (periodic)"
+    ]
+  },
+  "network_ports": {
+    "8443_tcp": "HTTPS WebRTC signaling (direct access)",
+    "8555_udp": "WebRTC media streams (UDP)",
+    "8081_tcp": "MP3 streaming",
+    "8099_tcp": "HTTP mode (Ingress only)",
+    "8080_tcp": "CA certificate download (self-signed SSL)"
+  },
+  "external_dependencies": {
+    "python": [
+      "aiohttp>=3.8.6",
+      "aiortc>=1.9.0",
+      "numpy>=1.26.0",
+      "cryptography>=41.0.0",
+      "av>=10.0.0",
+      "httpx>=0.25.0",
+      "pyjwt>=2.8.0"
+    ],
+    "nodejs": [
+      "Home Assistant Lovelace dashboard cards"
+    ],
+    "system": [
+      "ffmpeg",
+      "openssl",
+      "bash",
+      "jq",
+      "netcat"
+    ]
+  }
+}

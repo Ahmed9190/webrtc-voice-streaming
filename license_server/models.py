@@ -8,9 +8,9 @@ from sqlalchemy import (
     Float,
     Index,
     ForeignKey,
+    JSON,
 )
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.dialects.postgresql import UUID, JSONB
 from datetime import datetime
 import uuid
 
@@ -20,13 +20,13 @@ Base = declarative_base()
 class License(Base):
     __tablename__ = "licenses"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     user_email = Column(String(255), unique=True, nullable=False, index=True)
     purchase_code = Column(String(255), unique=True, nullable=False)
 
     hardware_id = Column(String(128), unique=True, nullable=True, index=True)
-    hardware_components = Column(JSONB, nullable=True)
+    hardware_components = Column(JSON, nullable=True)
 
     token = Column(Text, unique=True, nullable=True)
 
@@ -49,9 +49,9 @@ class License(Base):
 class ValidationLog(Base):
     __tablename__ = "validation_logs"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     license_id = Column(
-        UUID(as_uuid=True), ForeignKey("licenses.id"), nullable=False, index=True
+        String(36), ForeignKey("licenses.id"), nullable=False, index=True
     )
 
     validated_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
@@ -80,9 +80,9 @@ class ValidationLog(Base):
 class SecurityIncident(Base):
     __tablename__ = "security_incidents"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     license_id = Column(
-        UUID(as_uuid=True), ForeignKey("licenses.id"), nullable=False, index=True
+        String(36), ForeignKey("licenses.id"), nullable=False, index=True
     )
 
     detected_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -90,7 +90,7 @@ class SecurityIncident(Base):
     incident_type = Column(String(50), nullable=False)
     severity = Column(String(20), nullable=False)
 
-    details = Column(JSONB)
+    details = Column(JSON)
     anomaly_score = Column(Float)
 
     action_taken = Column(String(50))
@@ -104,9 +104,9 @@ class SecurityIncident(Base):
 class SessionState(Base):
     __tablename__ = "session_states"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     license_id = Column(
-        UUID(as_uuid=True), ForeignKey("licenses.id"), nullable=False, index=True
+        String(36), ForeignKey("licenses.id"), nullable=False, index=True
     )
 
     session_id = Column(String(64), unique=True, nullable=False)
